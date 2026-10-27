@@ -17,7 +17,7 @@ namespace HellmartCoop
     //   HMCOOP_PORT = UDP/TCP port (overrides the config's Port)
     //   HMCOOP_BOT  = circle: move the local player around a 2 m circle (test bot)
     //   HMCOOP_MENUTEST = coop | hostplay | join: drive the menu without clicks (see CoopMenu)
-    [BepInPlugin(Guid, "Hellmart Coop", "0.0.4")]
+    [BepInPlugin(Guid, "Hellmart Coop", "0.9.0")]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "ari.hellmart.coop";
