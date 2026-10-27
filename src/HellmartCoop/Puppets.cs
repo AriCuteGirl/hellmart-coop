@@ -24,9 +24,16 @@ namespace HellmartCoop
 
         public int Count => puppets.Count;
 
+        // Remote players who are spectating (dead until morning), by id.
+        public readonly HashSet<byte> Dead = new HashSet<byte>();
+
         public void Apply(PlayerState state)
         {
-            if (!state.InGame)
+            if (state.Dead)
+                Dead.Add(state.Id);
+            else
+                Dead.Remove(state.Id);
+            if (!state.InGame || state.Dead)
             {
                 Remove(state.Id);
                 return;
@@ -36,6 +43,8 @@ namespace HellmartCoop
                 p = Create(state.Id);
                 p.Root.transform.position = state.Position;
                 puppets[state.Id] = p;
+                if (hidden == state.Id)
+                    SetVisible(p, false);
                 Plugin.Log.LogInfo($"Puppet {state.Id} spawned at {state.Position}");
             }
             // Drop reordered packets.
@@ -79,6 +88,36 @@ namespace HellmartCoop
         }
 
         public IEnumerable<byte> Ids => puppets.Keys;
+
+        // Hide one puppet (the player being spectated: the camera sits inside its head), or none.
+        private byte? hidden;
+
+        public void HideOnly(byte? id)
+        {
+            if (hidden == id)
+                return;
+            hidden = id;
+            foreach (var pair in puppets)
+                SetVisible(pair.Value, pair.Key != id);
+        }
+
+        private static void SetVisible(Puppet p, bool visible)
+        {
+            if (p.Root == null)
+                return;
+            foreach (var r in p.Root.GetComponentsInChildren<Renderer>(true))
+                r.enabled = visible;
+        }
+
+        // Latest received pose of every remote player (not the smoothed one), for the host's monsters.
+        public IEnumerable<(byte id, Vector3 position, float yaw, float pitch)> Poses()
+        {
+            foreach (var pair in puppets)
+            {
+                if (pair.Value.Root != null)
+                    yield return (pair.Key, pair.Value.TargetPosition, pair.Value.TargetYaw, pair.Value.TargetPitch);
+            }
+        }
 
         public void Clear()
         {

@@ -194,7 +194,67 @@ All host → client, as repeated snapshots on `Net.BroadcastWorld(channel)` (UDP
   probably Ari clicking the customer copy's cash by hand, so the real click path sends the action.
   Not confirmed with Ari.
 
+### Night, part 1: generator, cash/quota, monsters (2026-10-27)
+
+- **Generator** (`GeneratorSync.cs`, world 10 / action 11): client skips `Generator.Update` and
+  local `ChangeState`; follows host state + petrol (`ChangeState`/`ChangePetrol` via reflection).
+  Client `Fill` and `HandleQTESuccess` → host. Test `HMCOOP_GENTEST=host/client`: host broke it →
+  client `Working -> Broken (host)`; client fixed + refuelled 10 → host `Broken -> Working`,
+  `now 15.0`; both Working/15.0.
+- **Cash + quota** (`CashSync.cs`, world 12 / action 13): one store wallet (host
+  `PlayerController.Cash`) and the host's quota; client HUD updated through the game's own events;
+  client `Pay` → host `Pay`; client `EarnQuota`/`QuotaUp` dropped. Test: client paid 1.00 → host
+  −1.00, then a client sale tip +0.50 → both −0.50, quota 1.00/25.00 both.
+- **Night directors host-only** (`NightSync.cs`): client skips InvasionGenerator/AnomalyGenerator
+  OnActivate, MarketManager.StartInvasion, MonsterManager.SpawnLikeAFake/CreateUndergroundMonster,
+  DoorInvasion.SummonMonster.
+- **Monsters on clients**: `CustomerSync` now also mirrors every `Monster` (tracked at
+  `Monster.Start`, kind byte in the appearance message). Test `HMCOOP_MONSTERTEST=1`: host monster
+  at (1.22,0.09,3.27) → client mirror, both at (5.60,0.27,3.11).
+- **Monster hunts both players** (`MonsterHunt.cs`, world 14): before each host `Monster.Update`
+  the nearest player is picked; for a remote player the host's player + look transforms stand in at
+  the remote pose during the call (restored in a finalizer). `MonsterKills.Play` against a remote
+  player is redirected to that client (repeated, deduped); the host skips its death screen for it and
+  sets the monster back to Search after 5 s. The client freezes its monster copy, enables its
+  Cinemachine cameras, plays the same variant, then shows DeadScreen. Test `HMCOOP_BAIT=1` (client
+  warps next to the monster): host `caught client 1 (EatPlayer)`, client `caught by monster 2
+  (EatPlayer)` + kill view (claw on screen) + death screen; host not killed by the monster.
+- Seen in that test: a monster appearing switches the phase to HideAndSeek (`SetMonster`), and
+  `NightKiller` kills any player outside the store for 5 s at night ("You broke the rule"). The host
+  test player stood at the bus stop and died of that, which is the game's own rule, per player.
+- Host save backed up before monster tests: `local/save-backup/`.
+
+### Co-op death: spectate until morning (2026-10-27, Ari's choice)
+
+`CoopDeath.cs` (world ch 15) + `Dead` flag in the player packet (StateSize 32).
+- Deaths: `PlayerController.Die` (night rule outside the store) → spectate; the host's own monster
+  kill (single `Monster.HandleAttack` hook: remote kills tick in MonsterHunt, the host's own kill
+  becomes spectate + monster back to Search); a kill sent to a client → spectate.
+- Spectating: `PlayerController.SwitchToWatchCamera` with our CinemachineCamera (priority 50)
+  following a living player's eyes. Others drop the dead player's puppet; host monsters ignore a dead
+  player and never replay a kill on a spectating host.
+- Morning (host clock) revives the dead next to a living player. A missed quota (Die inside
+  `ShiftStateAsset.OnTransition`) or everyone dead → host declares the run lost (repeated broadcast)
+  → everyone gets the game's DeadScreen; no revive after that.
+- Tests (`HMCOOP_MONSTERTEST=1` host now steps inside the store at 25 s, spawns at 30, removes the
+  monster at 44, Morning at 46; `HMCOOP_BAIT=1` client at 36 s):
+  - both outside at hide-and-seek → both `died (Die())` → `run lost (everyone died)` → DeadScreen.
+  - client caught (`KickBackPlayer`), monster then caught the host too → run lost (found and fixed:
+    Morning revived players after a lost run).
+  - client caught (`EatPlayer`) → spectating; host alive; Morning → client
+    `morning, back in the game`, both sides 1 puppet again. No exceptions.
+
+- Spectator banner (Ari's request, `SpectatorBanner.cs`): "SPECTATING / until morning" at the top,
+  own overlay canvas, the game's subtitle font (MonologueUI's TMP font). The spectated player's puppet
+  is hidden: the spectator camera sits at eye height, inside its black visor box (that was the black
+  screen, spotted by Ari). Revive only on the change *to* Morning. After a client kill the monster
+  copy is unfrozen so it follows the host again. Screenshot `local/logs/spectating-2026-10-27.png`.
+
 Not synced yet / known gaps:
+- Hiding in the fridge isn't synced: the host's monster doesn't know when a remote player is hiding.
+- Remote players can't hide in the fridge yet (MonsterManager.IsHeroHidden is the host's).
+- Doors at night (DoorCore/DoorInvasion/DoorShake), barricades, chains, monster hands, anomalies
+  are not synced yet.
 - Customers who want cigarettes (DefaultCustomer `wannaCigarette`) ask before paying; handing
   cigarettes from the client is not forwarded yet (the host log says so when it happens).
 - The host's own cashier work while a client is seated isn't arbitrated (two cashiers at once).

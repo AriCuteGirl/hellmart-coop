@@ -6,9 +6,11 @@ using UnityEngine.AI;
 
 namespace HellmartCoop
 {
-    // Host-authoritative customers.
+    // Host-authoritative customers and monsters (kind 0 / 1), both shown on clients as script-less
+    // copies of the same prefab.
     //
-    // Host: every customer made by CustomerManager.SpawnCustomer gets a net id. Two channels:
+    // Host: every customer made by CustomerManager.SpawnCustomer and every Monster that starts gets a
+    // net id. Two channels:
     //  - Appearance (on spawn, then every 2 s): prefab name + one bit per transform in the customer's
     //    hierarchy saying whether it is active. The game picks looks by enabling child models
     //    (CustomerCustomerPool, CustomerLogic), so copying those bits copies the look without
@@ -30,8 +32,10 @@ namespace HellmartCoop
         private const int MaxPerMotionPacket = 8;
 
         // Host side.
-        private static readonly Dictionary<Customer, ushort> ids = new Dictionary<Customer, ushort>();
-        private static readonly Dictionary<Customer, string> prefabNames = new Dictionary<Customer, string>();
+        private const byte KindCustomer = 0, KindMonster = 1;
+        private static readonly Dictionary<Component, ushort> ids = new Dictionary<Component, ushort>();
+        private static readonly Dictionary<Component, string> prefabNames = new Dictionary<Component, string>();
+        private static readonly Dictionary<Component, byte> kinds = new Dictionary<Component, byte>();
         private static ushort nextId = 1;
         private static float nextMotion;
         private static float nextAppearance;
@@ -46,6 +50,23 @@ namespace HellmartCoop
             public float TargetYaw;
             public float LastHeard;
             public int StateHash;
+            // Kill cinematic running locally: ignore the host's motion until then.
+            public float FrozenUntil;
+        }
+
+        // Host: the net id of a tracked customer or monster.
+        public static bool TryGetId(Component c, out ushort id) => ids.TryGetValue(c, out id);
+
+        // Client: the copy for a net id.
+        public static GameObject MirrorRoot(ushort id) => mirrors.TryGetValue(id, out var m) ? m.Root : null;
+
+        public static void Freeze(ushort id, float seconds)
+        {
+            if (mirrors.TryGetValue(id, out var m))
+            {
+                m.FrozenUntil = Time.unscaledTime + seconds;
+                m.LastHeard = Time.unscaledTime + seconds; // don't time out meanwhile
+            }
         }
 
         private static readonly Dictionary<ushort, Mirror> mirrors = new Dictionary<ushort, Mirror>();
@@ -77,7 +98,25 @@ namespace HellmartCoop
                 }
                 ids[__result] = nextId++;
                 prefabNames[__result] = customerPrefab.name;
+                kinds[__result] = KindCustomer;
                 nextAppearance = 0f; // send its look right away
+            }
+        }
+
+        // Monsters come from door invasions, anomalies and fake customers, all via Instantiate; Start
+        // catches every one.
+        [HarmonyPatch(typeof(Monster), "Start")]
+        private static class TrackMonster
+        {
+            private static void Postfix(Monster __instance)
+            {
+                if (!IsHost || ids.ContainsKey(__instance))
+                    return;
+                ids[__instance] = nextId++;
+                prefabNames[__instance] = __instance.gameObject.name.Replace("(Clone)", "").Trim();
+                kinds[__instance] = KindMonster;
+                nextAppearance = 0f;
+                Plugin.Log.LogInfo($"Monsters: '{prefabNames[__instance]}' appeared at {__instance.transform.position}");
             }
         }
 
@@ -115,11 +154,11 @@ namespace HellmartCoop
                 return;
             RunTest();
             // Drop destroyed customers (Despawn destroys the GameObject).
-            List<Customer> dead = null;
+            List<Component> dead = null;
             foreach (var c in ids.Keys)
             {
                 if (c == null)
-                    (dead ?? (dead = new List<Customer>())).Add(c);
+                    (dead ?? (dead = new List<Component>())).Add(c);
             }
             if (dead != null)
             {
@@ -127,6 +166,7 @@ namespace HellmartCoop
                 {
                     ids.Remove(c);
                     prefabNames.Remove(c);
+                    kinds.Remove(c);
                 }
             }
             if (ids.Count == 0)
@@ -141,7 +181,7 @@ namespace HellmartCoop
             if (Time.unscaledTime >= nextMotion)
             {
                 nextMotion = Time.unscaledTime + MotionInterval;
-                var batch = new List<KeyValuePair<Customer, ushort>>(ids);
+                var batch = new List<KeyValuePair<Component, ushort>>(ids);
                 for (int start = 0; start < batch.Count; start += MaxPerMotionPacket)
                 {
                     int end = Mathf.Min(start + MaxPerMotionPacket, batch.Count);
@@ -168,7 +208,7 @@ namespace HellmartCoop
             return result;
         }
 
-        private static void SendAppearance(Net net, Customer customer, ushort id)
+        private static void SendAppearance(Net net, Component customer, ushort id)
         {
             var transforms = BodyTransforms(customer.gameObject);
             var bits = new byte[(transforms.Count + 7) / 8];
@@ -180,13 +220,14 @@ namespace HellmartCoop
             net.BroadcastWorld(AppearanceChannel, w =>
             {
                 w.Write(id);
+                w.Write(kinds[customer]);
                 w.Write(prefabNames[customer]);
                 w.Write((ushort)transforms.Count);
                 w.Write(bits);
             });
         }
 
-        private static void WriteMotion(BinaryWriter w, Customer customer, ushort id)
+        private static void WriteMotion(BinaryWriter w, Component customer, ushort id)
         {
             var t = customer.transform;
             w.Write(id);
@@ -242,6 +283,7 @@ namespace HellmartCoop
         private static void ApplyAppearance(BinaryReader r)
         {
             ushort id = r.ReadUInt16();
+            byte kind = r.ReadByte();
             string prefabName = r.ReadString();
             int count = r.ReadUInt16();
             byte[] bits = r.ReadBytes((count + 7) / 8);
@@ -250,7 +292,7 @@ namespace HellmartCoop
 
             if (!mirrors.TryGetValue(id, out var mirror) || mirror.Root == null)
             {
-                var prefab = FindPrefab(prefabName);
+                var prefab = FindPrefab(kind, prefabName);
                 if (prefab == null)
                 {
                     Plugin.Log.LogWarning($"Customers: no prefab '{prefabName}' on this client");
@@ -295,6 +337,8 @@ namespace HellmartCoop
 
                 // Motion before appearance: wait for the look.
                 if (!mirrors.TryGetValue(id, out var mirror) || mirror.Root == null)
+                    continue;
+                if (Time.unscaledTime < mirror.FrozenUntil)
                     continue;
                 if (mirror.LastHeard == 0f || (mirror.Root.transform.position - position).sqrMagnitude > 25f)
                     mirror.Root.transform.position = position;
@@ -354,6 +398,8 @@ namespace HellmartCoop
                     (stale ?? (stale = new List<ushort>())).Add(pair.Key);
                     continue;
                 }
+                if (Time.unscaledTime < m.FrozenUntil)
+                    continue;
                 var tr = m.Root.transform;
                 tr.position = Vector3.Lerp(tr.position, m.TargetPosition, t);
                 tr.rotation = Quaternion.Slerp(tr.rotation, Quaternion.Euler(0f, m.TargetYaw, 0f), t);
@@ -425,20 +471,27 @@ namespace HellmartCoop
             return new Mirror { Root = go };
         }
 
-        private static GameObject FindPrefab(string name)
+        private static GameObject FindPrefab(byte kind, string name)
         {
-            if (prefabsByName == null || !prefabsByName.ContainsKey(name))
+            string key = $"{kind}:{name}";
+            if (prefabsByName == null || !prefabsByName.ContainsKey(key))
             {
                 // Prefab assets referenced by the loaded scenes (not scene instances).
                 prefabsByName = new Dictionary<string, GameObject>();
+                var roots = new List<GameObject>();
                 foreach (var c in Resources.FindObjectsOfTypeAll<Customer>())
+                    roots.Add(c.gameObject);
+                foreach (var m in Resources.FindObjectsOfTypeAll<Monster>())
+                    roots.Add(m.gameObject);
+                foreach (var go in roots)
                 {
-                    var go = c.gameObject;
-                    if (!go.scene.IsValid() && go.transform.parent == null && !prefabsByName.ContainsKey(go.name))
-                        prefabsByName[go.name] = go;
+                    byte k = go.GetComponent<Monster>() != null ? KindMonster : KindCustomer;
+                    string id = $"{k}:{go.name}";
+                    if (!go.scene.IsValid() && go.transform.parent == null && !prefabsByName.ContainsKey(id))
+                        prefabsByName[id] = go;
                 }
             }
-            prefabsByName.TryGetValue(name, out var prefab);
+            prefabsByName.TryGetValue(key, out var prefab);
             return prefab;
         }
 
@@ -452,6 +505,7 @@ namespace HellmartCoop
             mirrors.Clear();
             ids.Clear();
             prefabNames.Clear();
+            kinds.Clear();
         }
 
         // Client: the game's own customer sources stay off; customers come from the host.

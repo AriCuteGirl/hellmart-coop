@@ -26,6 +26,7 @@ namespace HellmartCoop
         internal static Plugin Instance;
 
         public Net Net { get; private set; }
+        public Puppets Puppets => puppets;
         public string JoinAddress
         {
             get => joinAddress.Value;
@@ -81,6 +82,10 @@ namespace HellmartCoop
                 ShelfSync.Register(Net);
                 StoreSync.Register(Net);
                 CheckoutSync.Register(Net);
+                GeneratorSync.Register(Net);
+                CashSync.Register(Net);
+                MonsterHunt.Register(Net);
+                CoopDeath.Register(Net);
                 if (host)
                     saveHost = new SaveShare.Host(udpPort);
                 Log.LogInfo(host ? $"Networking as host on port {udpPort}" : $"Networking as client to {JoinAddress}:{udpPort}");
@@ -102,6 +107,8 @@ namespace HellmartCoop
             CustomerSync.Clear();
             ShelfSync.Clear();
             CheckoutSync.Clear();
+            MonsterHunt.Clear();
+            CoopDeath.Clear();
         }
 
         // Downloads the host's save into the co-op slot, then starts networking as a client.
@@ -157,6 +164,18 @@ namespace HellmartCoop
                 ShelfSync.HostUpdate(Net);
                 StoreSync.HostUpdate(Net);
                 CheckoutSync.HostUpdate(Net);
+                GeneratorSync.HostUpdate(Net);
+                GeneratorSync.Test(Net.IsHost);
+                CashSync.HostUpdate(Net);
+                if (Net.IsHost)
+                    NightSync.HostTest();
+                MonsterHunt.HostUpdate(Net);
+                CoopDeath.Update();
+                CoopDeath.DieTest();
+                if (!Net.IsHost)
+                    MonsterHunt.ClientBait();
+                if (!Net.IsHost)
+                    CashSync.ClientTest();
                 if (!Net.IsHost)
                 {
                     ShelfSync.ClientTest();
@@ -181,6 +200,8 @@ namespace HellmartCoop
         {
             if (player == null)
                 return new PlayerState { InGame = false };
+            if (CoopDeath.LocalDead)
+                return new PlayerState { InGame = true, Dead = true, Position = player.transform.position };
             var look = PlayerManager.LookController.transform.eulerAngles;
             return new PlayerState
             {
@@ -205,7 +226,7 @@ namespace HellmartCoop
                 if (puppets.TryGetPosition(id, out var pos))
                     remote += $" [{id}] {pos}";
             }
-            Log.LogInfo($"Net: local id {Net.LocalId}, puppets {puppets.Count}{remote}, customers host {CustomerSync.HostCount} mirrors {CustomerSync.MirrorCount}{CustomerSync.Describe()}{ShelfSync.Describe()}{(Signage.Instance != null && MainDoor.Instance != null ? $", sign {Signage.IsOpen()} door {MainDoor.IsOpen()}" : "")}, tape {(ScannerSystem.Instance != null ? ScannerSystem.Instance.TapeProducts.Count : -1)}, register {(CashRegister.Instance != null ? $"{CashRegister.Instance.Registered}/{CashRegister.Instance.FinalPrice:F2}" : "-")}, pending actions {Net.PendingActionCount}");
+            Log.LogInfo($"Net: local id {Net.LocalId}, puppets {puppets.Count}{remote}, customers host {CustomerSync.HostCount} mirrors {CustomerSync.MirrorCount}{CustomerSync.Describe()}{ShelfSync.Describe()}{(Signage.Instance != null && MainDoor.Instance != null ? $", sign {Signage.IsOpen()} door {MainDoor.IsOpen()}" : "")}, tape {(ScannerSystem.Instance != null ? ScannerSystem.Instance.TapeProducts.Count : -1)}, register {(CashRegister.Instance != null ? $"{CashRegister.Instance.Registered}/{CashRegister.Instance.FinalPrice:F2}" : "-")}, generator {(Generator.Instance != null ? $"{Generator.Instance.CurrentState}/{Generator.Instance.Petrol:F1}" : "-")}, cash {(PlayerController.Instance != null ? PlayerController.Instance.Cash.ToString("F2") : "-")}, quota {(QuotaManager.Instance != null ? $"{QuotaManager.Instance.QuotaCurrent:F2}/{QuotaManager.Instance.QuotaGoal:F2}" : "-")}, pending actions {Net.PendingActionCount}");
         }
 
         private void OnDestroy()

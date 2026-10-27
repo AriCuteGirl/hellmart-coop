@@ -18,6 +18,8 @@ namespace HellmartCoop
         public float Yaw;
         public float Pitch;
         public bool InGame;
+        // Spectating until morning (co-op death).
+        public bool Dead;
     }
 
     // Plain UDP, star topology: clients talk only to the host, the host forwards each
@@ -26,8 +28,8 @@ namespace HellmartCoop
     {
         private const uint Magic = 0x31434D48; // "HMC1"
         private const byte MsgState = 1;
-        // magic 4 + type 1 + id 1 + seq 4 + position 12 + yaw 4 + pitch 4 + in-game 1
-        private const int StateSize = 31;
+        // magic 4 + type 1 + id 1 + seq 4 + position 12 + yaw 4 + pitch 4 + in-game 1 + dead 1
+        private const int StateSize = 32;
 
         public readonly bool IsHost;
         public byte LocalId { get; private set; }
@@ -208,6 +210,7 @@ namespace HellmartCoop
                 w.Write(s.Yaw);
                 w.Write(s.Pitch);
                 w.Write(s.InGame);
+                w.Write(s.Dead);
                 return ms.ToArray();
             }
         }
@@ -413,6 +416,7 @@ namespace HellmartCoop
                 s.Yaw = r.ReadSingle();
                 s.Pitch = r.ReadSingle();
                 s.InGame = r.ReadBoolean();
+                s.Dead = r.ReadBoolean();
                 return true;
             }
         }

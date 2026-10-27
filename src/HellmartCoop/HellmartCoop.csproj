@@ -22,6 +22,8 @@
     <Reference Include="UnityEngine.AnimationModule" HintPath="$(Managed)/UnityEngine.AnimationModule.dll" Private="false" />
     <Reference Include="UnityEngine.AIModule" HintPath="$(Managed)/UnityEngine.AIModule.dll" Private="false" />
     <Reference Include="UnityEngine.AudioModule" HintPath="$(Managed)/UnityEngine.AudioModule.dll" Private="false" />
+    <Reference Include="Unity.Cinemachine" HintPath="$(Managed)/Unity.Cinemachine.dll" Private="false" />
+    <Reference Include="Unity.RenderPipelines.Core.Runtime" HintPath="$(Managed)/Unity.RenderPipelines.Core.Runtime.dll" Private="false" />
     <Reference Include="Newtonsoft.Json" HintPath="$(Managed)/Newtonsoft.Json.dll" Private="false" />
     <Reference Include="Assembly-CSharp" HintPath="$(Managed)/Assembly-CSharp.dll" Private="false" />
   </ItemGroup>
