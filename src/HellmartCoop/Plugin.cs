@@ -91,6 +91,7 @@ namespace HellmartCoop
                 CleanSync.Register(Net);
                 DialogueSync.Register(Net);
                 StorageSync.Register(Net);
+                UpgradeSync.Register(Net);
                 if (host)
                     saveHost = new SaveShare.Host(udpPort);
                 Log.LogInfo(host ? $"Networking as host on port {udpPort}" : $"Networking as client to {JoinAddress}:{udpPort}");
@@ -192,6 +193,9 @@ namespace HellmartCoop
                 CleanSync.Test(Net.IsHost);
                 DialogueSync.HostUpdate(Net);
                 StorageSync.HostUpdate(Net);
+                UpgradeSync.HostUpdate(Net);
+                if (!Net.IsHost)
+                    UpgradeSync.ClientTest();
                 if (!Net.IsHost)
                     StorageSync.ClientTest();
                 if (!Net.IsHost)
@@ -254,7 +258,7 @@ namespace HellmartCoop
                 if (puppets.TryGetPosition(id, out var pos))
                     remote += $" [{id}] {pos}";
             }
-            Log.LogInfo($"Net: local id {Net.LocalId}, puppets {puppets.Count}{remote}, customers host {CustomerSync.HostCount} mirrors {CustomerSync.MirrorCount}{CustomerSync.Describe()}{ShelfSync.Describe()}{(Signage.Instance != null && MainDoor.Instance != null ? $", sign {Signage.IsOpen()} door {MainDoor.IsOpen()}" : "")}, tape {(ScannerSystem.Instance != null ? ScannerSystem.Instance.TapeProducts.Count : -1)}, register {(CashRegister.Instance != null ? $"{CashRegister.Instance.Registered}/{CashRegister.Instance.FinalPrice:F2}" : "-")}, generator {(Generator.Instance != null ? $"{Generator.Instance.CurrentState}/{Generator.Instance.Petrol:F1}" : "-")}, cash {(PlayerController.Instance != null ? PlayerController.Instance.Cash.ToString("F2") : "-")}, quota {(QuotaManager.Instance != null ? $"{QuotaManager.Instance.QuotaCurrent:F2}/{QuotaManager.Instance.QuotaGoal:F2}" : "-")}{DoorSync.Describe()}{AnomalySync.Describe()}{CleanSync.Describe()}{StorageSync.Describe()}, pending actions {Net.PendingActionCount}");
+            Log.LogInfo($"Net: local id {Net.LocalId}, puppets {puppets.Count}{remote}, customers host {CustomerSync.HostCount} mirrors {CustomerSync.MirrorCount}{CustomerSync.Describe()}{ShelfSync.Describe()}{(Signage.Instance != null && MainDoor.Instance != null ? $", sign {Signage.IsOpen()} door {MainDoor.IsOpen()}" : "")}, tape {(ScannerSystem.Instance != null ? ScannerSystem.Instance.TapeProducts.Count : -1)}, register {(CashRegister.Instance != null ? $"{CashRegister.Instance.Registered}/{CashRegister.Instance.FinalPrice:F2}" : "-")}, generator {(Generator.Instance != null ? $"{Generator.Instance.CurrentState}/{Generator.Instance.Petrol:F1}" : "-")}, cash {(PlayerController.Instance != null ? PlayerController.Instance.Cash.ToString("F2") : "-")}, quota {(QuotaManager.Instance != null ? $"{QuotaManager.Instance.QuotaCurrent:F2}/{QuotaManager.Instance.QuotaGoal:F2}" : "-")}{DoorSync.Describe()}{AnomalySync.Describe()}{CleanSync.Describe()}{StorageSync.Describe()}{UpgradeSync.Describe()}, pending actions {Net.PendingActionCount}");
         }
 
         private void OnDestroy()

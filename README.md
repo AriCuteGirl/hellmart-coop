@@ -11,7 +11,7 @@ others join, and you run the store and survive the nights together. No game file
 - **The host runs the world**; everyone sees the same:
   day/night clock and phases, customers (look, walking, animation), shelf stock, open sign and main
   door, generator (fuel, breaks), store cash and quota, monsters, night doors (planks, chains, monster
-  hands), anomalies, dirt and trash, back-room storage boxes.
+  hands), anomalies, dirt and trash, back-room storage boxes, store upgrades and decorations.
 - **Clients can do things**: open the sign/door, restock shelves, work the register (scan, bag, take
   cash, give change, finish the sale, answer the customer's questions, hand over cigarettes), refuel/repair the generator, nail planks,
   chain doors, hit monster hands, clear anomalies, mop and shovel, hide in fridges, take/put back storage boxes, order refills.
@@ -22,7 +22,7 @@ others join, and you run the store and survive the nights together. No game file
 
 ## Known gaps
 
-- Store upgrades, decorations and supply purchases only take effect for the player who bought them.
+- Supplies (planks, canisters, traps) go to the buyer's own inventory; the money is shared.
 - A box in someone's hands isn't visible to the other players.
 - Scares and special story events still happen separately for each player.
 - Joining is by IP (UDP + TCP port 27350, forward it on the host's router); Steam invites are planned.

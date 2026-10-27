@@ -365,9 +365,20 @@ All host → client, as repeated snapshots on `Net.BroadcastWorld(channel)` (UDP
   Logs `local/logs/storage-{host,client}.log`.
 - A box in someone's hands isn't visible to the others (puppets carry nothing).
 
+### Store upgrades and decorations (2026-10-28)
+
+`UpgradeSync.cs` (world ch 28 at 1 Hz, action ch 29).
+- Host → client: every `UpgradeData` (key → Level) and `PurchasableDecoreData` decorations (Purchased,
+  Installed by field order); client `SetLevel` (fires OnUpgrade) / `UpdateVisuals`.
+- Client → host: `UpgradeData.LevelUp` (with the level it reached; host applies only if it's one above
+  its own) and the decoration state after `DecoBasketUI.Interact`.
+- Supplies (`Supply.Buy` → `Delivery.AddWood/AddCanister/AddTrap`) go into the buyer's own inventory, so
+  they stay the buyer's; only the payment is shared.
+- Test (`HMCOOP_UPGRADETEST=client`): client bought 'camera' and a decoration → host `bought 'camera',
+  level 1`, `changed the decorations`; both sides upgrade levels 0 → 1, decor 6 → 8. No exceptions.
+
 Not synced yet / known gaps:
 - Dialogues away from the register (other NPC chats) still run on whoever starts them.
-- Store upgrades (UpgradeBasketUI / UpgradeData levels), decorations and Supply purchases: payment is shared but the purchase itself happens only for the buyer.
 - Scares and unique story events, Steam invites.
 - Customers who want cigarettes (DefaultCustomer `wannaCigarette`) ask before paying; handing
   cigarettes from the client is not forwarded yet (the host log says so when it happens).
