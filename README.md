@@ -13,7 +13,7 @@ others join, and you run the store and survive the nights together. No game file
   door, generator (fuel, breaks), store cash and quota, monsters, night doors (planks, chains, monster
   hands), anomalies, dirt and trash.
 - **Clients can do things**: open the sign/door, restock shelves, work the register (scan, bag, take
-  cash, give change, finish the sale, hand over cigarettes), refuel/repair the generator, nail planks,
+  cash, give change, finish the sale, answer the customer's questions, hand over cigarettes), refuel/repair the generator, nail planks,
   chain doors, hit monster hands, clear anomalies, mop and shovel, hide in fridges.
 - **Pausing** only pauses you; the world keeps running.
 - **Monsters** hunt whoever is closest. A caught player **spectates until morning** ("SPECTATING"
@@ -22,7 +22,6 @@ others join, and you run the store and survive the nights together. No game file
 
 ## Known gaps
 
-- Customer dialogues with choices (e.g. "give cigarettes / no smoking") appear only on the host's screen.
 - Boxes in your hands, the back-room storage and ordering aren't synced yet.
 - Scares and special story events still happen separately for each player.
 - Joining is by IP (UDP + TCP port 27350, forward it on the host's router); Steam invites are planned.

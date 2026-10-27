@@ -331,8 +331,26 @@ All host → client, as repeated snapshots on `Net.BroadcastWorld(channel)` (UDP
   GameplayScene; both sides 1 puppet; no exceptions.
 - The host's test save drifted after many runs; restored from `local/save-backup/host-0158`.
 
+### Customer dialogues on the client cashier (2026-10-28)
+
+`DialogueSync.cs` (world ch 24 at 4 Hz while a chat is on, action ch 25).
+- Host: `ChatLogic.StartChat()` for the customer at the counter while a client sits at the register runs
+  StartChat's own effects (isActive, LookAtMe, OnDialogueStart, OnDialogueGlobalStart) but not the host
+  player state or DialogueUI, and sends session/node numbers, speaker name key, text key + args and the
+  options (key, args, clickable). Keys travel, so each side translates into its own language. The host's
+  `DialogueUI.IsActive` stays false, so the clock doesn't pause for a client's conversation.
+- Client: shows it in its own DialogueUI box (ShowUI/ClearButtons via reflection; buttons + "continue"
+  click) without leaving the register; the pick → host → `option.Select()` and the next node, or
+  EndChat's effects (LookAtMe, OnDialogueEnd, OnDialogueGlobalEnd).
+- Test (`HMCOOP_CIGTEST=host`; client `HMCOOP_CHECKOUTTEST=1 HMCOOP_DIALOGUETEST=client`): client showed
+  "Add a pack of cigarettes to that" (2 options) → chose option 0 → host `chose
+  'd_generic_cigarettes_player_reply_1_1'` → chat ended → client handed over cigarettes → the pack came
+  to the client's tape (keyless product by asset name) → scanned, bagged → paid 20.00 for 4.50 → change
+  [10.00, 5.00, 0.50] → host completed the sale. PASSED, no exceptions.
+  Logs `local/logs/dialogue-{host,client}.log`.
+
 Not synced yet / known gaps:
-- Customer dialogues with choices (cigarettes, etc.) appear only on the host.
+- Dialogues away from the register (other NPC chats) still run on whoever starts them.
 - Boxes in hand, back-room storage/ordering, scares and unique story events, Steam invites.
 - Customers who want cigarettes (DefaultCustomer `wannaCigarette`) ask before paying; handing
   cigarettes from the client is not forwarded yet (the host log says so when it happens).

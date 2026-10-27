@@ -43,6 +43,7 @@ namespace HellmartCoop
         private static float nextSend;
         // Host: a client is sitting at the register.
         private static bool remoteCashier;
+        public static bool RemoteCashier => remoteCashier;
         private static bool hostWasRegistered;
         // Host: a client clicked the cash a moment before the customer held it out.
         private static float pendingCashUntil = -1f;

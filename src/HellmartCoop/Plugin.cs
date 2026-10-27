@@ -89,6 +89,7 @@ namespace HellmartCoop
                 DoorSync.Register(Net);
                 AnomalySync.Register(Net);
                 CleanSync.Register(Net);
+                DialogueSync.Register(Net);
                 if (host)
                     saveHost = new SaveShare.Host(udpPort);
                 Log.LogInfo(host ? $"Networking as host on port {udpPort}" : $"Networking as client to {JoinAddress}:{udpPort}");
@@ -115,6 +116,7 @@ namespace HellmartCoop
             DoorSync.Clear();
             AnomalySync.Clear();
             CleanSync.Clear();
+            DialogueSync.Clear();
         }
 
         // Downloads the host's save into the co-op slot, then starts networking as a client.
@@ -186,6 +188,9 @@ namespace HellmartCoop
                 CleanSync.HostUpdate(Net);
                 CleanSync.ClientUpdate(Net);
                 CleanSync.Test(Net.IsHost);
+                DialogueSync.HostUpdate(Net);
+                if (!Net.IsHost)
+                    DialogueSync.ClientTest();
                 if (!Net.IsHost)
                 {
                     MonsterHunt.ClientBait();
