@@ -349,9 +349,26 @@ All host → client, as repeated snapshots on `Net.BroadcastWorld(channel)` (UDP
   [10.00, 5.00, 0.50] → host completed the sale. PASSED, no exceptions.
   Logs `local/logs/dialogue-{host,client}.log`.
 
+### Back-room storage, boxes and ordering (2026-10-28)
+
+`StorageSync.cs` (world ch 26 at 1 Hz, 40 slots per datagram; action ch 27).
+- Host → client: every `PackageShelf` slot (scene path): box or not, product (`saveKey` or
+  `name:<asset>`), count. Client spawns/removes/refills boxes the way `SpawnPackage` does; its own
+  `RefreshPackage`/`SpawnPackage` (noon refresh) are off.
+- Client → host: box taken from a slot (`PackageShelf.PackageGrabbed`) → host empties that slot (the box
+  stays local in the client's hands; restocking from it is ShelfSync); box put in a slot (`PutPackage`)
+  → host spawns one with that product/count; refill ordered on the computer (`StorageManager.FillByRack`)
+  → host fills (payment already goes through CashSync).
+- Test (`HMCOOP_STORAGETEST=client`): client moved a canned_pickles x10 box between slots and ordered a
+  refill → host `took`, `put ... x10`, `ordered a refill`; both sides 24 → 25 boxes, 240 → 250 items.
+  First run showed 6 boxes on the client: the snapshot was capped at 60 slots; now chunked.
+  Logs `local/logs/storage-{host,client}.log`.
+- A box in someone's hands isn't visible to the others (puppets carry nothing).
+
 Not synced yet / known gaps:
 - Dialogues away from the register (other NPC chats) still run on whoever starts them.
-- Boxes in hand, back-room storage/ordering, scares and unique story events, Steam invites.
+- Store upgrades (UpgradeBasketUI / UpgradeData levels), decorations and Supply purchases: payment is shared but the purchase itself happens only for the buyer.
+- Scares and unique story events, Steam invites.
 - Customers who want cigarettes (DefaultCustomer `wannaCigarette`) ask before paying; handing
   cigarettes from the client is not forwarded yet (the host log says so when it happens).
 - The host's own cashier work while a client is seated isn't arbitrated (two cashiers at once).
