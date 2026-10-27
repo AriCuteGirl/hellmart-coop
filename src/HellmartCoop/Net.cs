@@ -42,7 +42,8 @@ namespace HellmartCoop
         private readonly UdpClient udp;
         private readonly IPEndPoint hostEndPoint;
         // Clients that stay silent this long are dropped (crash, Alt+F4, rejoin from a new socket).
-        private const float ClientTimeout = 5f;
+        // Long enough for a client's loading screen (scene loads stall its updates for several seconds).
+        private const float ClientTimeout = 15f;
 
         private class Client
         {
@@ -151,6 +152,7 @@ namespace HellmartCoop
             var join = RelayPacket(RJoin, RelayStr(code.Trim().ToUpperInvariant(), name));
             udp.Send(join, join.Length, relay);
             joinPacket = join;
+            StartHeartbeat();
         }
 
         private byte[] joinPacket;
@@ -243,6 +245,7 @@ namespace HellmartCoop
             }
             receiver = new Thread(ReceiveLoop) { IsBackground = true, Name = "HellmartCoop.Net" };
             receiver.Start();
+            StartHeartbeat();
             if (steam)
                 AcceptSteamSessions();
         }
@@ -384,11 +387,41 @@ namespace HellmartCoop
             return false;
         }
 
+        // Client heartbeat from a background thread: while the game loads a scene its main thread sends
+        // nothing for many seconds, and the host would drop us. Re-sends the last state packet (the host
+        // ignores its old sequence number, but it counts as "still here"). UDP/relay only: the Steam API
+        // stays on the main thread.
+        private volatile byte[] lastStatePacket;
+        private int lastStateSent;
+        private Thread heartbeat;
+
+        private void StartHeartbeat()
+        {
+            if (IsHost || udp == null || heartbeat != null)
+                return;
+            heartbeat = new Thread(() =>
+            {
+                while (running)
+                {
+                    Thread.Sleep(1000);
+                    var packet = lastStatePacket;
+                    if (packet != null && Environment.TickCount - lastStateSent > 1500)
+                        Send(packet, hostEndPoint);
+                }
+            }) { IsBackground = true, Name = "HellmartCoop.Heartbeat" };
+            heartbeat.Start();
+        }
+
         public void SendState(PlayerState state)
         {
             state.Id = LocalId;
             state.Seq = ++seq;
             byte[] packet = Encode(state);
+            if (!IsHost)
+            {
+                lastStatePacket = packet;
+                lastStateSent = Environment.TickCount;
+            }
             if (IsHost)
             {
                 foreach (var client in clients.Keys)

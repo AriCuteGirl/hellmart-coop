@@ -18,7 +18,7 @@ namespace HellmartCoop
         private static ConfigEntry<string> nameEntry;
         private static readonly Dictionary<byte, string> names = new Dictionary<byte, string>();
         private static float nextSend;
-        private static bool sent;
+        private static byte sentForId = 255;
 
         public static void Bind(ConfigFile config)
         {
@@ -46,7 +46,7 @@ namespace HellmartCoop
 
         public static void Register(Net net)
         {
-            sent = false;
+            sentForId = 255;
             names.Clear();
             net.OnAction(ActionChannel, (clientId, r) =>
             {
@@ -77,10 +77,10 @@ namespace HellmartCoop
         {
             if (!net.IsHost)
             {
-                // Once the host has given us our id.
-                if (!sent && net.LocalId != 255)
+                // Each time the host gives us an id (a new one after a timeout too).
+                if (net.LocalId != 255 && net.LocalId != sentForId)
                 {
-                    sent = true;
+                    sentForId = net.LocalId;
                     string mine = Clean(LocalName);
                     net.SendAction(ActionChannel, w => w.Write(mine));
                     Plugin.Log.LogInfo($"Names: I am '{mine}'");

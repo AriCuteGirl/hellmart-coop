@@ -426,7 +426,15 @@ name; max 24 chars. Test with config names: host saw "Bestie", Ari saw "Ari" fro
   enabled. iptables: `-p udp --dport 27360 -m state --state NEW -j ACCEPT` inserted above the REJECT,
   saved to /etc/iptables/rules.v4 (backup rules.v4.bak-hellmart).
 - Checked: journal "listening on UDP 27360"; health `HMR1?` -> `HMR1!` on the VM; `manage.py info` running.
-  From outside: no answer until Ari adds the OCI ingress rule (UDP 27360).
+  Ari added the OCI ingress rule (UDP 27360); health answers from outside.
+- Room join through the Oracle relay (test copies, `HMCOOP_RELAY=<vm>:27360`, code read with
+  `manage.py rooms` over SSH): host opened a room, client joined, 44303-byte save through the relay,
+  puppets + names; `manage.py players` on the VM listed both.
+- Found there: a client's loading screen (> 15 s) sent nothing, the host timed it out and re-registered
+  it with a new id, and the name tag stayed on the old id. Fixed: client heartbeat from a background thread
+  (re-sends the last state packet, UDP/relay), client timeout 15 s, name re-sent on every new id.
+  Re-run (room WD5F): one join, no timeout, "player 1 is Bestie" = puppet 1.
+  Logs `local/logs/oracle-relay-{host,client}.log`.
 - The server address stays out of the repo (players set `RelayAddress` themselves).
 
 Not synced yet / known gaps:
