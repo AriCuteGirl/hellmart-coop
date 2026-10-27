@@ -50,6 +50,7 @@ namespace HellmartCoop
             Log.LogInfo($"Hello from Hellmart Coop, Unity {Application.unityVersion}");
             joinAddress = Config.Bind("Network", "JoinAddress", "127.0.0.1", "Host IP that the Join button connects to.");
             PlayerLook.Bind(Config);
+            PlayerNames.Bind(Config);
             port = Config.Bind("Network", "Port", 27350, "Port the host listens on (UDP for players, TCP for the save).");
             string envHost = Env("HMCOOP_HOST", "");
             if (envHost != "")
@@ -93,6 +94,7 @@ namespace HellmartCoop
                 DialogueSync.Register(Net);
                 StorageSync.Register(Net);
                 UpgradeSync.Register(Net);
+                PlayerNames.Register(Net);
                 if (host)
                     saveHost = new SaveShare.Host(udpPort);
                 Log.LogInfo(host ? $"Networking as host on port {udpPort}" : $"Networking as client to {JoinAddress}:{udpPort}");
@@ -195,6 +197,7 @@ namespace HellmartCoop
                 DialogueSync.HostUpdate(Net);
                 StorageSync.HostUpdate(Net);
                 UpgradeSync.HostUpdate(Net);
+                PlayerNames.Update(Net);
                 if (!Net.IsHost)
                     UpgradeSync.ClientTest();
                 if (!Net.IsHost)

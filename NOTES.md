@@ -386,6 +386,13 @@ VR box), a soft emissive glow in their color (the store is dim; plain colors rea
 the dome, head tilt limited to ±25°. Ari: first version "looks bad" (floating hat, dark), second "looks much
 better". Screenshot `local/logs/looks-2026-10-28.png`.
 
+### Name tags (2026-10-28, Ari's request)
+
+`PlayerNames.cs` (action ch 30 "my name", world ch 31 all names at 1 Hz) + a world-space TextMeshPro over
+each puppet (subtitle font, player color lightened, faces our camera, hidden with the puppet). Name = Steam
+name (`Steamworks.SteamClient.Name`) when Steam/PupBerg is up, else config `[Player] Name`, else the PC user
+name; max 24 chars. Test with config names: host saw "Bestie", Ari saw "Ari" from the client.
+
 Not synced yet / known gaps:
 - Dialogues away from the register (other NPC chats) still run on whoever starts them.
 - Scares and unique story events, Steam invites.

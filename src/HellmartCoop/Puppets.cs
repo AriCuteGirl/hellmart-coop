@@ -18,6 +18,8 @@ namespace HellmartCoop
             public Renderer Body;
             public GameObject Accessory;
             public GameObject Eyes;
+            public TMPro.TextMeshPro NameTag;
+            public string Name;
             public int LookColor = -1;
             public int LookAccessory = -1;
             public uint LastSeq;
@@ -84,6 +86,7 @@ namespace HellmartCoop
                 var tr = p.Root.transform;
                 tr.position = Vector3.Lerp(tr.position, p.TargetPosition, t);
                 tr.rotation = Quaternion.Slerp(tr.rotation, Quaternion.Euler(0f, p.TargetYaw, 0f), t);
+                UpdateNameTag(pair.Key, p);
                 // Nod only a little: a capsule head tipped far back looks broken.
                 float pitch = Mathf.Clamp(Mathf.DeltaAngle(0f, p.TargetPitch), -25f, 25f);
                 p.Head.localRotation = Quaternion.Slerp(p.Head.localRotation, Quaternion.Euler(pitch, 0f, 0f), t);
@@ -169,6 +172,41 @@ namespace HellmartCoop
             head.SetParent(root.transform, false);
             head.localPosition = new Vector3(0f, 1.6f, 0f);
             return new Puppet { Root = root, Head = head, Body = body.GetComponent<Renderer>(), Eyes = PlayerLook.BuildEyes(head, LitMaterial()) };
+        }
+
+        // Name over the head, in the player's color, always turned to our camera.
+        private static void UpdateNameTag(byte id, Puppet p)
+        {
+            string name = PlayerNames.NameOf(id);
+            if (name == null)
+                return;
+            if (p.NameTag == null)
+            {
+                var go = new GameObject("NameTag");
+                go.transform.SetParent(p.Root.transform, false);
+                go.transform.localPosition = new Vector3(0f, 2.45f, 0f);
+                p.NameTag = go.AddComponent<TMPro.TextMeshPro>();
+                var font = MonologueUI.Instance != null ? MonologueUI.Instance.GetComponentInChildren<TMPro.TMP_Text>(true)?.font : null;
+                if (font != null)
+                    p.NameTag.font = font;
+                p.NameTag.fontSize = 2.2f;
+                p.NameTag.alignment = TMPro.TextAlignmentOptions.Center;
+                p.NameTag.textWrappingMode = TMPro.TextWrappingModes.NoWrap;
+                p.NameTag.outlineWidth = 0.25f;
+                p.NameTag.outlineColor = new Color32(0, 0, 0, 230);
+                p.NameTag.rectTransform.sizeDelta = new Vector2(6f, 1f);
+                p.NameTag.GetComponent<MeshRenderer>().enabled = p.Body != null && p.Body.enabled;
+            }
+            if (p.Name != name)
+            {
+                p.Name = name;
+                p.NameTag.text = name;
+            }
+            if (p.LookColor >= 0)
+                p.NameTag.color = Color.Lerp(PlayerLook.ColorOf((byte)p.LookColor), Color.white, 0.45f);
+            var cam = Camera.main;
+            if (cam != null)
+                p.NameTag.transform.rotation = Quaternion.LookRotation(p.NameTag.transform.position - cam.transform.position);
         }
 
         // The player's color and accessory (PlayerLook), rebuilt when they change.
