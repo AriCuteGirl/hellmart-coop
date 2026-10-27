@@ -419,6 +419,16 @@ name; max 24 chars. Test with config names: host saw "Bestie", Ari saw "Ari" fro
   Log `local/logs/relay-test-2026-10-28.log`.
 - Gotcha: never `pgrep -f`/`kill` by a pattern that also appears in the same shell command.
 
+### Relay deployed on the Oracle VM (2026-10-28)
+
+- `~/hellmart-relay` (relay script + manage.py, `data/` 0700), systemd `hellmart-relay.service` (same
+  hardening as ss2.service: ProtectSystem=strict, writes only to data/, MemoryMax=200M, Restart=always),
+  enabled. iptables: `-p udp --dport 27360 -m state --state NEW -j ACCEPT` inserted above the REJECT,
+  saved to /etc/iptables/rules.v4 (backup rules.v4.bak-hellmart).
+- Checked: journal "listening on UDP 27360"; health `HMR1?` -> `HMR1!` on the VM; `manage.py info` running.
+  From outside: no answer until Ari adds the OCI ingress rule (UDP 27360).
+- The server address stays out of the repo (players set `RelayAddress` themselves).
+
 Not synced yet / known gaps:
 - Dialogues away from the register (other NPC chats) still run on whoever starts them.
 - Scares and unique story events, Steam invites.
