@@ -49,6 +49,7 @@ namespace HellmartCoop
             Instance = this;
             Log.LogInfo($"Hello from Hellmart Coop, Unity {Application.unityVersion}");
             joinAddress = Config.Bind("Network", "JoinAddress", "127.0.0.1", "Host IP that the Join button connects to.");
+            PlayerLook.Bind(Config);
             port = Config.Bind("Network", "Port", 27350, "Port the host listens on (UDP for players, TCP for the save).");
             string envHost = Env("HMCOOP_HOST", "");
             if (envHost != "")
@@ -238,6 +239,8 @@ namespace HellmartCoop
             {
                 InGame = true,
                 InFridge = MonsterManager.Instance != null && MonsterManager.Instance.CurrentFridge != null,
+                LookColor = PlayerLook.ColorIndex,
+                LookAccessory = PlayerLook.AccessoryIndex,
                 Position = player.transform.position,
                 Yaw = look.y,
                 Pitch = look.x,

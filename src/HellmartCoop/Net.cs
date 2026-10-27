@@ -22,6 +22,9 @@ namespace HellmartCoop
         public bool Dead;
         // Hiding in a fridge.
         public bool InFridge;
+        // PlayerLook: capsule color and accessory.
+        public byte LookColor;
+        public byte LookAccessory;
     }
 
     // Plain UDP, star topology: clients talk only to the host, the host forwards each
@@ -30,8 +33,8 @@ namespace HellmartCoop
     {
         private const uint Magic = 0x31434D48; // "HMC1"
         private const byte MsgState = 1;
-        // magic 4 + type 1 + id 1 + seq 4 + position 12 + yaw 4 + pitch 4 + in-game 1 + dead 1 + fridge 1
-        private const int StateSize = 33;
+        // magic 4 + type 1 + id 1 + seq 4 + position 12 + yaw 4 + pitch 4 + in-game 1 + dead 1 + fridge 1 + look 2
+        private const int StateSize = 35;
 
         public readonly bool IsHost;
         public byte LocalId { get; private set; }
@@ -214,6 +217,8 @@ namespace HellmartCoop
                 w.Write(s.InGame);
                 w.Write(s.Dead);
                 w.Write(s.InFridge);
+                w.Write(s.LookColor);
+                w.Write(s.LookAccessory);
                 return ms.ToArray();
             }
         }
@@ -421,6 +426,8 @@ namespace HellmartCoop
                 s.InGame = r.ReadBoolean();
                 s.Dead = r.ReadBoolean();
                 s.InFridge = r.ReadBoolean();
+                s.LookColor = r.ReadByte();
+                s.LookAccessory = r.ReadByte();
                 return true;
             }
         }

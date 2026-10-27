@@ -15,11 +15,14 @@ namespace HellmartCoop
             public float TargetYaw;
             public float TargetPitch;
             public bool InFridge;
+            public Renderer Body;
+            public GameObject Accessory;
+            public GameObject Eyes;
+            public int LookColor = -1;
+            public int LookAccessory = -1;
             public uint LastSeq;
             public float LastHeard;
         }
-
-        private static readonly Color[] Colors = { Color.red, Color.cyan, Color.yellow, Color.magenta };
 
         private readonly Dictionary<byte, Puppet> puppets = new Dictionary<byte, Puppet>();
 
@@ -55,6 +58,8 @@ namespace HellmartCoop
             p.TargetPosition = state.Position;
             p.TargetYaw = state.Yaw;
             p.TargetPitch = state.Pitch;
+            if (p.LookColor != state.LookColor || p.LookAccessory != state.LookAccessory)
+                ApplyLook(p, state.LookColor, state.LookAccessory, hidden != state.Id && !p.InFridge);
             if (p.InFridge != state.InFridge)
             {
                 p.InFridge = state.InFridge;
@@ -79,7 +84,9 @@ namespace HellmartCoop
                 var tr = p.Root.transform;
                 tr.position = Vector3.Lerp(tr.position, p.TargetPosition, t);
                 tr.rotation = Quaternion.Slerp(tr.rotation, Quaternion.Euler(0f, p.TargetYaw, 0f), t);
-                p.Head.localRotation = Quaternion.Slerp(p.Head.localRotation, Quaternion.Euler(p.TargetPitch, 0f, 0f), t);
+                // Nod only a little: a capsule head tipped far back looks broken.
+                float pitch = Mathf.Clamp(Mathf.DeltaAngle(0f, p.TargetPitch), -25f, 25f);
+                p.Head.localRotation = Quaternion.Slerp(p.Head.localRotation, Quaternion.Euler(pitch, 0f, 0f), t);
             }
             foreach (byte id in stale)
                 Remove(id);
@@ -150,34 +157,36 @@ namespace HellmartCoop
 
         private static Puppet Create(byte id)
         {
-            Color color = Colors[id % Colors.Length];
             var root = new GameObject($"CoopPuppet_{id}");
             // The player's transform sits at the feet, so lift the capsule by half its height.
             var body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             body.transform.SetParent(root.transform, false);
             body.transform.localPosition = new Vector3(0f, 0.9f, 0f);
             body.transform.localScale = new Vector3(0.6f, 0.9f, 0.6f);
+            // Puppets must not block the local player or trigger anything.
+            Object.Destroy(body.GetComponent<Collider>());
             var head = new GameObject("Head").transform;
             head.SetParent(root.transform, false);
             head.localPosition = new Vector3(0f, 1.6f, 0f);
-            var visor = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            visor.transform.SetParent(head, false);
-            visor.transform.localPosition = new Vector3(0f, 0f, 0.3f);
-            visor.transform.localScale = new Vector3(0.35f, 0.15f, 0.3f);
-            foreach (var go in new[] { body, visor })
+            return new Puppet { Root = root, Head = head, Body = body.GetComponent<Renderer>(), Eyes = PlayerLook.BuildEyes(head, LitMaterial()) };
+        }
+
+        // The player's color and accessory (PlayerLook), rebuilt when they change.
+        private static void ApplyLook(Puppet p, byte color, byte accessory, bool visible)
+        {
+            var material = LitMaterial();
+            PlayerLook.Paint(p.Body, PlayerLook.ColorOf(color), material);
+            if (p.LookAccessory != accessory)
             {
-                // Puppets must not block the local player or trigger anything.
-                Object.Destroy(go.GetComponent<Collider>());
-                var renderer = go.GetComponent<Renderer>();
-                var material = LitMaterial();
-                if (material != null)
-                    renderer.sharedMaterial = material;
-                var block = new MaterialPropertyBlock();
-                block.SetColor("_BaseColor", go == visor ? Color.black : color);
-                block.SetColor("_Color", go == visor ? Color.black : color);
-                renderer.SetPropertyBlock(block);
+                if (p.Accessory != null)
+                    Object.Destroy(p.Accessory);
+                p.Accessory = PlayerLook.BuildAccessory(p.Head, accessory, material);
+                if (p.Eyes != null)
+                    p.Eyes.SetActive(PlayerLook.Accessories[Mathf.Clamp(accessory, 0, PlayerLook.Accessories.Length - 1)] != "VR box");
             }
-            return new Puppet { Root = root, Head = head };
+            p.LookColor = color;
+            p.LookAccessory = accessory;
+            SetVisible(p, visible);
         }
 
         private static Material litMaterial;

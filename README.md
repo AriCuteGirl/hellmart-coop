@@ -7,7 +7,8 @@ others join, and you run the store and survive the nights together. No game file
 
 - **Co-op menu**: a Co-op button in the main menu (Host game / Host IP / Join / Back). Joining downloads
   the host's save into its own slot ("Co-op (host)"); your own saves are never touched.
-- **Players** see each other (simple capsule bodies for now).
+- **Players** see each other as capsule characters with eyes; pick your **Color** and **Look** (glasses,
+  sunglasses, cap, top hat, headphones, crown, party hat, VR box) in the Co-op menu.
 - **The host runs the world**; everyone sees the same:
   day/night clock and phases, customers (look, walking, animation), shelf stock, open sign and main
   door, generator (fuel, breaks), store cash and quota, monsters, night doors (planks, chains, monster

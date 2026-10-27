@@ -377,6 +377,15 @@ All host → client, as repeated snapshots on `Net.BroadcastWorld(channel)` (UDP
 - Test (`HMCOOP_UPGRADETEST=client`): client bought 'camera' and a decoration → host `bought 'camera',
   level 1`, `changed the decorations`; both sides upgrade levels 0 → 1, decor 6 → 8. No exceptions.
 
+### Player looks (2026-10-28, Ari's request)
+
+`PlayerLook.cs` + `Puppets.cs`: color (10) and accessory (None, Glasses, Sunglasses, Cap, Top hat,
+Headphones, Crown, Party hat, VR box) picked in the Co-op sub-menu (Color / Look buttons cycle), saved in
+the config `[Look]`, sent in every player packet (StateSize 35). Puppets get cartoon eyes (hidden under the
+VR box), a soft emissive glow in their color (the store is dim; plain colors read as black), hats sitting on
+the dome, head tilt limited to ±25°. Ari: first version "looks bad" (floating hat, dark), second "looks much
+better". Screenshot `local/logs/looks-2026-10-28.png`.
+
 Not synced yet / known gaps:
 - Dialogues away from the register (other NPC chats) still run on whoever starts them.
 - Scares and unique story events, Steam invites.

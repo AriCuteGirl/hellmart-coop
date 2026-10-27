@@ -7,7 +7,7 @@ using UnityEngine.UI;
 namespace HellmartCoop
 {
     // Adds a "Co-op" entry to the main menu, styled by cloning the game's own Story Mode button.
-    // Co-op opens a sub-menu in the same column: Host game / Host IP: [field] / Join / Back.
+    // Co-op opens a sub-menu in the same column: Host game / Host IP: [field] / Join / Color / Look / Back.
     // Host starts networking and opens the game's save slot picker. Join downloads the host's
     // save into a separate slot and starts the game on it.
     [HarmonyPatch(typeof(Menu), "Start")]
@@ -56,6 +56,23 @@ namespace HellmartCoop
             var join = Clone(template, "Coop Join Button", "Join", Join);
             joinLabel = join.GetComponentInChildren<TMP_Text>();
             coopButtons.Add(join);
+            // Your look for the other players (PlayerLook): each click picks the next one.
+            var colorButton = Clone(template, "Coop Color Button", ColorLabel(), null);
+            var colorLabel = colorButton.GetComponentInChildren<TMP_Text>();
+            colorButton.GetComponent<Button>().onClick.AddListener(() =>
+            {
+                PlayerLook.NextColor();
+                colorLabel.text = ColorLabel();
+            });
+            coopButtons.Add(colorButton);
+            var lookButton = Clone(template, "Coop Look Button", LookLabel(), null);
+            var lookLabel = lookButton.GetComponentInChildren<TMP_Text>();
+            lookButton.GetComponent<Button>().onClick.AddListener(() =>
+            {
+                PlayerLook.NextAccessory();
+                lookLabel.text = LookLabel();
+            });
+            coopButtons.Add(lookButton);
             coopButtons.Add(Clone(template, "Coop Back Button", "Back", CloseCoopMenu));
             foreach (var go in coopButtons)
                 go.SetActive(false);
@@ -134,9 +151,13 @@ namespace HellmartCoop
             // Replacing the event drops the persistent (Inspector) listeners, which RemoveAllListeners keeps.
             var button = go.GetComponent<Button>();
             button.onClick = new Button.ButtonClickedEvent();
-            button.onClick.AddListener(onClick);
+            if (onClick != null)
+                button.onClick.AddListener(onClick);
             return go;
         }
+
+        private static string ColorLabel() => $"Color: {PlayerLook.ColorName}";
+        private static string LookLabel() => $"Look: {PlayerLook.AccessoryName}";
 
         private static void OpenCoopMenu()
         {
