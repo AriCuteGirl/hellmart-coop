@@ -11,6 +11,17 @@ namespace HellmartCoop
 
         public static ProductData Find(string key)
         {
+            // "name:<asset>" for products without a saveKey (cigarettes).
+            if (key != null && key.StartsWith("name:"))
+            {
+                string name = key.Substring(5);
+                foreach (var p in Resources.FindObjectsOfTypeAll<ProductData>())
+                {
+                    if (p.name == name)
+                        return p;
+                }
+                return null;
+            }
             var product = ProductManager.FindProduct(key);
             if (product != null)
                 return product;

@@ -41,6 +41,105 @@ namespace HellmartCoop
                 if (!runLost)
                     ShowRunLost(r.ReadString());
             });
+            net.OnWorld(ReloadChannel, r =>
+            {
+                ushort seq = r.ReadUInt16();
+                if (seq == lastReloadSeq || reloading)
+                    return;
+                lastReloadSeq = seq;
+                Plugin.Instance.StartCoroutine(ClientReload());
+            });
+        }
+
+        // ---------------- load checkpoint together (Ari's rule) ----------------
+        // Only the host's "Load Checkpoint" counts: it tells everyone to reload (world channel 23,
+        // repeated for 2 s), then loads as usual. A client fetches the host's checkpoint again (like
+        // joining), installs it and loads it, so everybody starts together from the same save.
+        // A client's own Load Checkpoint button waits for the host.
+        public const byte ReloadChannel = 23;
+        private static ushort reloadSeq;
+        private static ushort lastReloadSeq;
+        private static float reloadSendUntil;
+        private static float nextReloadSend;
+        private static bool reloading;
+        private static bool allowClientLoad;
+
+        [HarmonyPatch(typeof(PauseManager), nameof(PauseManager.LoadCheckpoint))]
+        private static class LoadTogether
+        {
+            private static bool Prefix()
+            {
+                var net = Plugin.Instance.Net;
+                if (net == null)
+                    return true;
+                if (net.IsHost)
+                {
+                    reloadSeq++;
+                    reloadSendUntil = Time.unscaledTime + 2f;
+                    Plugin.Log.LogInfo("Checkpoint: host loads the checkpoint, everyone reloads");
+                    Clear();
+                    return true;
+                }
+                if (allowClientLoad)
+                    return true;
+                Plugin.Log.LogInfo("Checkpoint: waiting for the host to load the checkpoint");
+                return false;
+            }
+        }
+
+        // Test (HMCOOP_RELOADTEST=host): 8 s after the run is lost, press Load Checkpoint.
+        private static float lostAt = -1f;
+
+        public static void HostReloadUpdate(Net net)
+        {
+            if (net.IsHost && System.Environment.GetEnvironmentVariable("HMCOOP_RELOADTEST") == "host")
+            {
+                if (runLost && lostAt < 0f)
+                    lostAt = Time.unscaledTime;
+                if (lostAt > 0f && Time.unscaledTime - lostAt > 8f && PauseManager.Instance != null)
+                {
+                    lostAt = -2f;
+                    Plugin.Log.LogInfo("Reload test: host presses Load Checkpoint");
+                    PauseManager.Instance.LoadCheckpoint();
+                }
+            }
+            if (!net.IsHost || Time.unscaledTime > reloadSendUntil || Time.unscaledTime < nextReloadSend)
+                return;
+            nextReloadSend = Time.unscaledTime + 0.25f;
+            ushort seq = reloadSeq;
+            net.BroadcastWorld(ReloadChannel, w => w.Write(seq));
+        }
+
+        private static IEnumerator ClientReload()
+        {
+            reloading = true;
+            Plugin.Log.LogInfo("Checkpoint: the host loaded the checkpoint, reloading");
+            // Give the host a moment to be back on its feet, then join again: fetch + install its save.
+            yield return new WaitForSecondsRealtime(3f);
+            string error = "pending";
+            for (int attempt = 0; attempt < 5 && error != null; attempt++)
+            {
+                yield return Plugin.Instance.Join(e => error = e);
+                if (error != null)
+                    yield return new WaitForSecondsRealtime(2f);
+            }
+            if (error == null && PauseManager.Instance != null)
+            {
+                allowClientLoad = true;
+                try
+                {
+                    PauseManager.Instance.LoadCheckpoint();
+                }
+                finally
+                {
+                    allowClientLoad = false;
+                }
+            }
+            else
+            {
+                Plugin.Log.LogWarning($"Checkpoint: could not reload with the host ({error})");
+            }
+            reloading = false;
         }
 
         // ---------------- dying ----------------

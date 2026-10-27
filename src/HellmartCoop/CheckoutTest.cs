@@ -17,6 +17,7 @@ namespace HellmartCoop
         private static int step;
         private static int sales;
         private static bool changeTested;
+        private static bool cigaretteTaken;
         private static float next;
         private static float stepStarted;
 
@@ -73,6 +74,20 @@ namespace HellmartCoop
                     Advance(0.5f);
                     break;
                 case 3:
+                    // The customer asked for cigarettes: take a pack from the rack, scan and bag it too.
+                    if (CheckoutSync.HostWantsCigarette && !cigaretteTaken)
+                    {
+                        var cig = Object.FindObjectsByType<Cigarette>(FindObjectsSortMode.None).FirstOrDefault(c => c.GetComponentInParent<Pack>() != null);
+                        if (cig != null)
+                        {
+                            cigaretteTaken = true;
+                            Plugin.Log.LogInfo("Checkout test: the customer wants cigarettes, taking a pack");
+                            cig.Take();
+                            step = 1;
+                            next = Time.unscaledTime + 2f;
+                            return;
+                        }
+                    }
                     // The host says when its customer holds out cash; then click it on our copy.
                     var cash = CheckoutSync.HostCashOffered
                         ? Object.FindObjectsByType<CustomerCash>(FindObjectsInactive.Exclude, FindObjectsSortMode.None)
@@ -80,7 +95,13 @@ namespace HellmartCoop
                         : null;
                     if (cash == null)
                     {
-                        if (Time.unscaledTime - stepStarted > 60f)
+                        // More on the tape (an anomaly item first, then the real customer): serve that.
+                        if (CheckoutSync.ClientTapeCount > 0 && scanner.TapeProducts.Count > 0)
+                        {
+                            step = 1;
+                            return;
+                        }
+                        if (Time.unscaledTime - stepStarted > 120f)
                             Fail(CheckoutSync.HostCashOffered ? "the customer copy shows no cash" : "the customer never held out cash");
                         return;
                     }
@@ -126,6 +147,7 @@ namespace HellmartCoop
                     if (!register.Registered)
                     {
                         sales++;
+                        cigaretteTaken = false;
                         if (!changeTested && sales < 4)
                         {
                             Plugin.Log.LogInfo($"Checkout test: sale {sales} done without change, serving the next customer");

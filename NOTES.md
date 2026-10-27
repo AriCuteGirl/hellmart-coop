@@ -315,7 +315,25 @@ All host → client, as repeated snapshots on `Net.BroadcastWorld(channel)` (UDP
   Logs `local/logs/clean-{host,client}.log`.
 - Not exercised: trash piles (none active in the test save) and glass.
 
+### Cigarettes and load-checkpoint-together (2026-10-27)
+
+- Cigarettes (`CheckoutSync`): host sends "customer wants cigarettes" (`CustomerWantCigarette`); client
+  `Cigarette.Take` → host takes the same product from the same pack and runs `Take` (tape mirror brings
+  it back); `GetBack` forwarded too. Products without a saveKey (cigarettes) travel as `name:<asset>`.
+  Ari answered the customer's dialogue on the host ("give cigarettes"), then the client's hand-over
+  reached the host: `client 1 handed over cigarettes`. The tape-copy fix for keyless products is built
+  but not re-run.
+- Load Checkpoint together (Ari's rule, `CoopDeath`, world ch 23): only the host's Load Checkpoint
+  counts; it tells clients to reload, and each client re-joins (fetches + installs the host's checkpoint)
+  and loads it. A client's own button waits for the host.
+  Test (`HMCOOP_DIETEST=1` both, `HMCOOP_RELOADTEST=host`): both died → run lost → host Load
+  Checkpoint → client `the host loaded the checkpoint, reloading` → re-joined (44303-byte save) →
+  GameplayScene; both sides 1 puppet; no exceptions.
+- The host's test save drifted after many runs; restored from `local/save-backup/host-0158`.
+
 Not synced yet / known gaps:
+- Customer dialogues with choices (cigarettes, etc.) appear only on the host.
+- Boxes in hand, back-room storage/ordering, scares and unique story events, Steam invites.
 - Customers who want cigarettes (DefaultCustomer `wannaCigarette`) ask before paying; handing
   cigarettes from the client is not forwarded yet (the host log says so when it happens).
 - The host's own cashier work while a client is seated isn't arbitrated (two cashiers at once).

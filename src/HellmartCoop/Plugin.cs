@@ -178,6 +178,7 @@ namespace HellmartCoop
                 MonsterHunt.HostUpdate(Net);
                 CoopDeath.Update();
                 CoopDeath.DieTest();
+                CoopDeath.HostReloadUpdate(Net);
                 DoorSync.HostUpdate(Net);
                 DoorSync.Test(Net.IsHost);
                 AnomalySync.HostUpdate(Net);

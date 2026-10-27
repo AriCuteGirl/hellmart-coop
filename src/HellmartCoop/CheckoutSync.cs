@@ -23,7 +23,8 @@ namespace HellmartCoop
         public const byte ActionChannel = 9;
         private const float Interval = 0.2f;
 
-        private const byte ActSeat = 0, ActScan = 1, ActBag = 2, ActCash = 3, ActChange = 4, ActBack = 5, ActComplete = 6;
+        private const byte ActSeat = 0, ActScan = 1, ActBag = 2, ActCash = 3, ActChange = 4, ActBack = 5, ActComplete = 6,
+            ActCigarette = 7, ActCigaretteBack = 8;
 
         private static readonly MethodInfo ScanItem = AccessTools.Method(typeof(ScannerSystem), "ScanItem");
         private static readonly MethodInfo SetHaveProducts = AccessTools.PropertySetter(typeof(StoreCheckout), nameof(StoreCheckout.HaveProducts));
@@ -48,6 +49,8 @@ namespace HellmartCoop
         private static byte pendingCashClient;
         // Client: the host's customer at the counter is holding out cash.
         public static bool HostCashOffered { get; private set; }
+        // Client: the host's customer at the counter asked for cigarettes.
+        public static bool HostWantsCigarette { get; private set; }
 
         private static CustomerCash OfferedCash()
         {
@@ -99,6 +102,14 @@ namespace HellmartCoop
         {
             if (!net.IsHost || ScannerSystem.Instance == null || CashRegister.Instance == null || Time.unscaledTime < nextSend)
                 return;
+            // Test (HMCOOP_CIGTEST=host): every customer at the counter wants cigarettes.
+            var current = StoreCheckout.Instance != null ? StoreCheckout.Instance.CurrentCustomer : null;
+            if (current is DefaultCustomer && System.Environment.GetEnvironmentVariable("HMCOOP_CIGTEST") == "host")
+            {
+                var t = Traverse.Create(current);
+                if (!t.Field<bool>("askedCigarette").Value && !t.Field<bool>("wannaCigarette").Value)
+                    t.Field("wannaCigarette").SetValue(true);
+            }
             nextSend = Time.unscaledTime + Interval;
             var tape = new List<ScanObject>();
             foreach (var so in ScannerSystem.Instance.TapeProducts)
@@ -131,13 +142,16 @@ namespace HellmartCoop
                 w.Write(register.FinalPrice);
                 w.Write(cr.Field<float>("cash").Value);
                 w.Write(StoreCheckout.Instance != null && StoreCheckout.Instance.HaveProducts);
+                w.Write(StoreCheckout.Instance != null && StoreCheckout.Instance.CustomerWantCigarette());
                 w.Write((byte)Mathf.Min(tape.Count, 40));
                 for (int i = 0; i < tape.Count && i < 40; i++)
                 {
                     var so = tape[i];
                     var product = so.GetComponent<Product>() ?? so.GetComponentInParent<Product>();
                     w.Write(hostIds[so]);
-                    w.Write(product != null && product.ProductConfig != null ? product.ProductConfig.saveKey : "");
+                    // Cigarettes have no saveKey; fall back to the ProductData asset name.
+                    var config = product != null ? product.ProductConfig : null;
+                    w.Write(config == null ? "" : !string.IsNullOrEmpty(config.saveKey) ? config.saveKey : "name:" + config.name);
                     var t = product != null ? product.transform : so.transform;
                     w.Write(t.position.x);
                     w.Write(t.position.y);
@@ -149,6 +163,23 @@ namespace HellmartCoop
             if (hostWasRegistered && !register.Registered)
                 Plugin.Log.LogInfo("Checkout: register reset (sale finished)");
             hostWasRegistered = register.Registered;
+        }
+
+        // The host's cigarette of that product in the pack at that scene path.
+        private static Cigarette HostCigarette(uint packId, string key)
+        {
+            foreach (var pack in Object.FindObjectsByType<Pack>(FindObjectsSortMode.None))
+            {
+                if (ShelfSync.PathId(pack.transform) != packId)
+                    continue;
+                foreach (var cig in pack.GetComponentsInChildren<Cigarette>())
+                {
+                    var p = cig.GetComponent<Product>();
+                    if (p != null && p.ProductConfig != null && p.ProductConfig.saveKey == key)
+                        return cig;
+                }
+            }
+            return null;
         }
 
         private static void TakeCash(CustomerCash cash, byte clientId)
@@ -235,6 +266,34 @@ namespace HellmartCoop
                 case ActBack:
                     register.BackChange();
                     break;
+                case ActCigarette:
+                {
+                    uint packId = r.ReadUInt32();
+                    string key = r.ReadString();
+                    var cig = HostCigarette(packId, key);
+                    if (cig != null && checkout.CustomerWantCigarette())
+                    {
+                        cig.Take();
+                        Plugin.Log.LogInfo($"Checkout: client {clientId} handed over cigarettes '{key}'");
+                    }
+                    else
+                    {
+                        Plugin.Log.LogInfo($"Checkout: client {clientId} cigarettes '{key}' not possible (found {cig != null}, wanted {checkout.CustomerWantCigarette()})");
+                    }
+                    break;
+                }
+                case ActCigaretteBack:
+                {
+                    var so = HostItem(r.ReadUInt16());
+                    var cig = so != null ? so.GetComponent<Cigarette>() : null;
+                    if (cig != null)
+                    {
+                        hostIds.Remove(so);
+                        cig.GetBack();
+                        Plugin.Log.LogInfo($"Checkout: client {clientId} took the cigarettes back");
+                    }
+                    break;
+                }
                 case ActComplete:
                 {
                     bool could = checkout.CanPurchase();
@@ -269,6 +328,7 @@ namespace HellmartCoop
             float finalPrice = r.ReadSingle();
             float cash = r.ReadSingle();
             bool haveProducts = r.ReadBoolean();
+            HostWantsCigarette = r.ReadBoolean();
             int count = r.ReadByte();
             var seen = new HashSet<ushort>();
             var scanner = ScannerSystem.Instance;
@@ -445,6 +505,61 @@ namespace HellmartCoop
             {
                 if (IsClient && __instance.ChangeList.Count > 0)
                     SendAction(ActBack);
+            }
+        }
+
+        // Client: "does the customer want cigarettes" is the host's customer's wish.
+        [HarmonyPatch(typeof(StoreCheckout), nameof(StoreCheckout.CustomerWantCigarette))]
+        private static class ClientCigaretteWish
+        {
+            private static bool Prefix(ref bool __result)
+            {
+                if (!IsClient)
+                    return true;
+                __result = HostWantsCigarette;
+                return false;
+            }
+        }
+
+        // Client: hand cigarettes over on the host; here they only leave the rack (the host's tape
+        // brings them onto ours).
+        [HarmonyPatch(typeof(Cigarette), nameof(Cigarette.Take))]
+        private static class ClientTakesCigarette
+        {
+            private static bool Prefix(Cigarette __instance)
+            {
+                if (!IsClient)
+                    return true;
+                var pack = __instance.GetComponentInParent<Pack>();
+                var product = __instance.GetComponent<Product>();
+                if (pack == null || product == null || product.ProductConfig == null)
+                    return false;
+                uint packId = ShelfSync.PathId(pack.transform);
+                string key = product.ProductConfig.saveKey;
+                SendAction(ActCigarette, w =>
+                {
+                    w.Write(packId);
+                    w.Write(key);
+                });
+                HostWantsCigarette = false;
+                pack.ReduceProduct(product);
+                Object.Destroy(product.gameObject);
+                Plugin.Log.LogInfo($"Checkout: handing over cigarettes '{key}'");
+                return false;
+            }
+        }
+
+        [HarmonyPatch(typeof(Cigarette), nameof(Cigarette.GetBack))]
+        private static class ClientCigaretteBack
+        {
+            private static void Prefix(Cigarette __instance)
+            {
+                var so = __instance.GetComponent<ScanObject>();
+                if (!IsClient || so == null || !clientIds.TryGetValue(so, out ushort id))
+                    return;
+                clientIds.Remove(so);
+                clientItems.Remove(id);
+                SendAction(ActCigaretteBack, w => w.Write(id));
             }
         }
 
