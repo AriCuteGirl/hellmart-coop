@@ -282,8 +282,40 @@ All host → client, as repeated snapshots on `Net.BroadcastWorld(channel)` (UDP
   No exceptions.
 - `DoorInvasion._state = Invasion` (door shaking + QTE) is never set by the game code, so not synced.
 
+### Anomalies (2026-10-27)
+
+`AnomalySync.cs` (world ch 19 at 2 Hz, action ch 20).
+- Host: every `AnomalyBehavior.Spawn` runs with `Random.InitState(seed)` (state restored after) and
+  the seed is broadcast with the anomaly's scene-path id while it's active. Several anomalies pick a
+  random target in OnSpawn (dirt spot, shelf, phantom customer); same seed + same scene = same pick.
+- Client: spawns what the host has active (same seed), `Despawn`s what the host cleared (so its
+  anomaly quest counts it); skips `ScanProductAnomaly` (CheckoutSync mirrors the tape).
+  `AnomalySpawner.Spawn` and `AnomalyGenerator.OnUpdate` (dirt → monster) are host-only;
+  `AnomalyGenerator.OnActivate` now runs on clients too, so they get the anomaly quest.
+- Client `Despawn` (a clear) → host `Despawn` (pays, counts toward the night total).
+- Test (`HMCOOP_ANOMALYTEST=host/client`): 3 spawner calls → Fire Alarm, Phantom Dynamic 3 (target
+  Customer Dynamic 7), Product Shelf 2, Phantom Dynamic 2 (Customer Dynamic 6), Product Scan on the
+  host; the client spawned the same 4 with the same seeds and the same phantom targets; client cleared
+  Fire Alarm → host `client 1 cleared Fire Alarm`; host 5 → 4 active, client 4 → 3 (no scan one).
+  No exceptions. Logs `local/logs/anomaly-{host,client}.log`.
+
+### Dirt, trash and cleaning (2026-10-27)
+
+`CleanSync.cs` (world ch 21 at 1 Hz, action ch 22).
+- Cleanables: `CanBeCleaned` (decals, dirty glass; alpha) and `TrashCleaned` (piles; stage).
+  Scene-placed ones match by scene path (active + progress); ones made during play ("(Clone)" in the
+  path: DirtSpawner dirt, footprints, blood) get a host net id + prefab name + pose and the client
+  instantiates the same prefab. Cleaned on the host → gone on the client.
+- Client `CleanDirt` (mop / shovel strokes) is batched every 0.25 s → host `CleanDirt` with the sum;
+  that target ignores snapshots for 1.5 s. Client `DirtManager.TrySpawnDirt` and
+  `MonsterManager.SpawnBloodyDirt` are host-only. FloorDirtAnomaly's dirt isn't mirrored (the anomaly
+  makes it on the client with the same seed).
+- Test (`HMCOOP_CLEANTEST=host/client`): host spawned 4 dirt → client 4 copies; client mopped one
+  (12 × 0.1) → host `cleaned Floor Dirt(Clone) by 0.90` → both 4 → 3. No exceptions.
+  Logs `local/logs/clean-{host,client}.log`.
+- Not exercised: trash piles (none active in the test save) and glass.
+
 Not synced yet / known gaps:
-- Anomalies (AnomalySpawner/AnomalyBehavior/AnomalyProduct) beyond the monster they cause.
 - Customers who want cigarettes (DefaultCustomer `wannaCigarette`) ask before paying; handing
   cigarettes from the client is not forwarded yet (the host log says so when it happens).
 - The host's own cashier work while a client is seated isn't arbitrated (two cashiers at once).

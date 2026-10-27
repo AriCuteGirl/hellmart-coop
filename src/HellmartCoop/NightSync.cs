@@ -5,7 +5,7 @@ using UnityEngine;
 
 namespace HellmartCoop
 {
-    // The night's "directors" run on the host only: door invasions, anomaly monsters, fake customers
+    // The night's "directors" run on the host only: door invasions, fake customers
     // turning into monsters. Their results reach clients through the mirrors (CustomerSync shows the
     // host's monsters) and the other sync channels.
     public static class NightSync
@@ -16,7 +16,6 @@ namespace HellmartCoop
             private static IEnumerable<MethodBase> TargetMethods()
             {
                 yield return AccessTools.Method(typeof(InvasionGenerator), "OnActivate");
-                yield return AccessTools.Method(typeof(AnomalyGenerator), "OnActivate");
                 yield return AccessTools.Method(typeof(MarketManager), nameof(MarketManager.StartInvasion));
                 yield return AccessTools.Method(typeof(MonsterManager), nameof(MonsterManager.SpawnLikeAFake));
                 yield return AccessTools.Method(typeof(MonsterManager), nameof(MonsterManager.CreateUndergroundMonster));
