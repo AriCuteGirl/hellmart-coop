@@ -42,7 +42,8 @@ namespace HellmartCoop
         {
             var manager = MonsterManager.Instance;
             var day = DayNightManager.Instance;
-            if (testStep >= 4 || manager == null || day == null || System.Environment.GetEnvironmentVariable("HMCOOP_MONSTERTEST") != "1")
+            string mode = System.Environment.GetEnvironmentVariable("HMCOOP_MONSTERTEST");
+            if (testStep >= 4 || manager == null || day == null || (mode != "1" && mode != "fridge"))
                 return;
             if (testStart < 0f)
                 testStart = Time.unscaledTime;
@@ -54,10 +55,41 @@ namespace HellmartCoop
                 Plugin.Log.LogInfo($"Monster test: host steps inside the store, inside={MarketManager.IsInsideMarket(spot)}");
                 testStep++;
             }
-            else if (testStep == 1 && t >= 30f)
+            else if (testStep == 1 && mode == "1" && t >= 30f)
             {
                 Plugin.Log.LogInfo("Monster test: host spawns the fake-customer monster");
                 manager.SpawnLikeAFake();
+                testStep++;
+            }
+            else if (testStep == 1 && mode == "fridge" && t >= 36f)
+            {
+                // Right at the fridge a remote player hides in (after HMCOOP_HIDETEST on the client),
+                // the way AnomalyGenerator spawns its monster.
+                Fridge target = null;
+                foreach (var pose in Plugin.Instance.Puppets.Poses())
+                {
+                    float best = float.MaxValue;
+                    foreach (var f in Object.FindObjectsByType<Fridge>(FindObjectsSortMode.None))
+                    {
+                        float d = Vector3.Distance(f.transform.position, pose.position);
+                        if (d < best)
+                        {
+                            best = d;
+                            target = f;
+                        }
+                    }
+                }
+                if (target == null)
+                {
+                    Plugin.Log.LogWarning("Monster test: no remote player to spawn next to");
+                    testStep = 4;
+                    return;
+                }
+                var position = target.transform.position + Vector3.up * 0.1f;
+                var monster = Object.Instantiate(manager.MonsterPrefab, position, Quaternion.identity).GetComponent<Monster>();
+                monster.SetTargetPosition(position);
+                monster.Activate();
+                Plugin.Log.LogInfo($"Monster test: spawned a monster at the fridge {target.transform.position}");
                 testStep++;
             }
             else if (testStep == 2 && t >= 44f)

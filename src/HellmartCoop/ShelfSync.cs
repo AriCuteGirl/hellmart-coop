@@ -101,7 +101,7 @@ namespace HellmartCoop
             {
                 if (config == null)
                 {
-                    var product = ProductManager.FindProduct(key);
+                    var product = Products.Find(key);
                     if (product == null)
                         return;
                     pack.SetConfig(product);
@@ -147,7 +147,7 @@ namespace HellmartCoop
             return byId;
         }
 
-        private static uint PathId(Transform t)
+        public static uint PathId(Transform t)
         {
             // FNV-1a over "scene/name#index/name#index/...": stable across machines and runs.
             var parts = new List<string>();
@@ -222,7 +222,7 @@ namespace HellmartCoop
             }
             if (current != key)
             {
-                var product = ProductManager.FindProduct(key);
+                var product = Products.Find(key);
                 if (product == null)
                 {
                     Plugin.Log.LogWarning($"Shelves: unknown product '{key}'");

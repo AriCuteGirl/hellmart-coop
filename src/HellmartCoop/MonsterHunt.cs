@@ -23,6 +23,7 @@ namespace HellmartCoop
     public static class MonsterHunt
     {
         public const byte Channel = 14;
+        public const byte GetOutChannel = 16;
         private const float RemoteKillDuration = 5f;
 
         // Host: set while Monster.Update runs against a remote player.
@@ -40,6 +41,7 @@ namespace HellmartCoop
         public static void Register(Net net)
         {
             net.OnWorld(Channel, ApplyKill);
+            net.OnWorld(GetOutChannel, ApplyGetOut);
         }
 
         // ---------------- host ----------------
@@ -50,6 +52,8 @@ namespace HellmartCoop
             public Vector3 PlayerPosition;
             public Vector3 LookPosition;
             public Quaternion LookRotation;
+            public bool FridgeSwapped;
+            public Fridge HostFridge;
         }
 
         [HarmonyPatch(typeof(Monster), "Update")]
@@ -94,11 +98,22 @@ namespace HellmartCoop
                 player.transform.position = t.position;
                 look.SetPositionAndRotation(t.position + eyeOffset, Quaternion.Euler(t.pitch, t.yaw, 0f));
                 remoteTarget = t.id;
+
+                // A remote player hiding in a fridge: the game's code reaches for CurrentFridge when it
+                // pulls the hidden player out, so stand the host's copy of that fridge in for it.
+                if (Plugin.Instance.Puppets.IsInFridge(t.id))
+                {
+                    __state.FridgeSwapped = true;
+                    __state.HostFridge = MonsterManager.Instance.CurrentFridge;
+                    MonsterManager.Instance.CurrentFridge = NearestFridge(t.position);
+                }
             }
 
             private static void Finalizer(Saved __state)
             {
                 remoteTarget = null;
+                if (__state.FridgeSwapped && MonsterManager.Instance != null)
+                    MonsterManager.Instance.CurrentFridge = __state.HostFridge;
                 if (!__state.Swapped || PlayerManager.Instance == null)
                     return;
                 PlayerManager.Instance.transform.position = __state.PlayerPosition;
@@ -106,18 +121,50 @@ namespace HellmartCoop
             }
         }
 
-        // The fridge belongs to the host's player; a remote player is never "hidden" in it (yet).
+        private static Fridge NearestFridge(Vector3 position)
+        {
+            Fridge best = null;
+            float bestDistance = float.MaxValue;
+            foreach (var f in UnityEngine.Object.FindObjectsByType<Fridge>(FindObjectsSortMode.None))
+            {
+                float d = Vector3.Distance(f.transform.position, position);
+                if (d < bestDistance)
+                {
+                    best = f;
+                    bestDistance = d;
+                }
+            }
+            return best;
+        }
+
+        // Hiding is per player: against a remote target, "is the hero hidden" means that player.
         [HarmonyPatch(typeof(MonsterManager), nameof(MonsterManager.IsHeroHidden), MethodType.Getter)]
-        private static class RemoteNotHidden
+        private static class RemoteHidden
         {
             private static bool Prefix(ref bool __result)
             {
                 if (remoteTarget == null)
                     return true;
-                __result = false;
+                __result = Plugin.Instance.Puppets.IsInFridge(remoteTarget.Value);
                 return false;
             }
         }
+
+        // The monster pulls a hidden remote player out: that happens on their machine, not to the host.
+        [HarmonyPatch(typeof(Fridge), nameof(Fridge.GetOut))]
+        private static class RemoteGetOut
+        {
+            private static bool Prefix()
+            {
+                if (remoteTarget == null)
+                    return true;
+                getOuts.Add((remoteTarget.Value, ++killSeq, 5));
+                Plugin.Log.LogInfo($"Monster: pulling client {remoteTarget.Value} out of the fridge");
+                return false;
+            }
+        }
+
+        private static readonly List<(byte client, ushort seq, int sendsLeft)> getOuts = new List<(byte, ushort, int)>();
 
         [HarmonyPatch(typeof(MonsterKills), nameof(MonsterKills.Play))]
         private static class RedirectRemoteKill
@@ -170,8 +217,21 @@ namespace HellmartCoop
 
         public static void HostUpdate(Net net)
         {
-            if (!net.IsHost || outgoing.Count == 0)
+            if (!net.IsHost)
                 return;
+            for (int i = getOuts.Count - 1; i >= 0; i--)
+            {
+                var g = getOuts[i];
+                net.BroadcastWorld(GetOutChannel, w =>
+                {
+                    w.Write(g.client);
+                    w.Write(g.seq);
+                });
+                if (g.sendsLeft <= 1)
+                    getOuts.RemoveAt(i);
+                else
+                    getOuts[i] = (g.client, g.seq, g.sendsLeft - 1);
+            }
             for (int i = outgoing.Count - 1; i >= 0; i--)
             {
                 var k = outgoing[i];
@@ -202,6 +262,19 @@ namespace HellmartCoop
                 return;
             Plugin.Log.LogInfo($"Monster: caught by monster {monsterId} ({variant})");
             Plugin.Instance.StartCoroutine(PlayKill(monsterId, variant));
+        }
+
+        private static void ApplyGetOut(BinaryReader r)
+        {
+            byte client = r.ReadByte();
+            ushort seq = r.ReadUInt16();
+            var net = Plugin.Instance.Net;
+            if (net == null || client != net.LocalId || !handledKills.Add(seq))
+                return;
+            var fridge = MonsterManager.Instance != null ? MonsterManager.Instance.CurrentFridge : null;
+            Plugin.Log.LogInfo($"Monster: pulled out of the fridge (hiding: {fridge != null})");
+            if (fridge != null)
+                fridge.GetOut();
         }
 
         private static IEnumerator PlayKill(ushort monsterId, string variant)
@@ -243,8 +316,45 @@ namespace HellmartCoop
         {
             remoteKills.Clear();
             outgoing.Clear();
+            getOuts.Clear();
             handledKills.Clear();
             remoteTarget = null;
+        }
+
+        // Test (HMCOOP_HIDETEST=1, client): 30 s after the world loads, hide in the fridge nearest to
+        // where the test monster appears, the way a click on it does.
+        private static float hideStart = -1f;
+        private static bool hideDone;
+
+        public static void ClientHide()
+        {
+            if (hideDone || PlayerManager.Instance == null || Environment.GetEnvironmentVariable("HMCOOP_HIDETEST") != "1")
+                return;
+            if (hideStart < 0f)
+                hideStart = Time.unscaledTime;
+            if (Time.unscaledTime - hideStart < 30f)
+                return;
+            hideDone = true;
+            var fridge = NearestFridge(new Vector3(1.22f, 0.09f, 3.27f));
+            if (fridge == null)
+            {
+                Plugin.Log.LogWarning("Hide test: no fridge");
+                return;
+            }
+            // Stand on the store side of the fridge (outside the store the night rule kills you).
+            var spot = fridge.transform.position + fridge.transform.forward * 1f;
+            foreach (var dir in new[] { fridge.transform.forward, -fridge.transform.forward, fridge.transform.right, -fridge.transform.right })
+            {
+                var candidate = fridge.transform.position + dir * 1f;
+                if (MarketManager.IsInsideMarket(candidate))
+                {
+                    spot = candidate;
+                    break;
+                }
+            }
+            PlayerManager.Instance.Warp(spot);
+            fridge.GetComponent<LookAtObject>().Interact();
+            Plugin.Log.LogInfo($"Hide test: hiding in the fridge at {fridge.transform.position}, {Vector3.Distance(fridge.transform.position, new Vector3(1.22f, 0.09f, 3.27f)):F1} m from the monster spawn, standing inside the store={MarketManager.IsInsideMarket(spot)}, hidden={MonsterManager.Instance.IsHeroHidden}");
         }
 
         // Test (HMCOOP_BAIT=1, client): 36 s after the world loads, stand right next to the host's

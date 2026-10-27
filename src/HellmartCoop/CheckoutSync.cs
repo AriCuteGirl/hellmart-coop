@@ -358,7 +358,7 @@ namespace HellmartCoop
 
         private static ScanObject CreateTapeItem(string key, Vector3 position, float yaw)
         {
-            var config = ProductManager.FindProduct(key);
+            var config = Products.Find(key);
             if (config == null)
             {
                 Plugin.Log.LogWarning($"Checkout: unknown product '{key}' on the host's tape");

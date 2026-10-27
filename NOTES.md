@@ -250,11 +250,40 @@ All host → client, as repeated snapshots on `Net.BroadcastWorld(channel)` (UDP
   screen, spotted by Ari). Revive only on the change *to* Morning. After a client kill the monster
   copy is unfrozen so it follows the host again. Screenshot `local/logs/spectating-2026-10-27.png`.
 
+### Fridge hiding for remote players (2026-10-27)
+
+- Player packet has `InFridge` (StateSize 33) = local `MonsterManager.CurrentFridge != null`. The
+  host hides that player's puppet while they hide.
+- Host monster against a remote target: `IsHeroHidden` = that player's flag (so it can't see them);
+  `CurrentFridge` temporarily = the host's fridge nearest to them; `Fridge.GetOut` against a remote
+  target is sent to that client (world ch 16, repeated, deduped), whose own fridge lets them out.
+- Test (`HMCOOP_HIDETEST=1` client hides from the store side of the fridge nearest the monster spawn;
+  host `HMCOOP_MONSTERTEST=fridge` spawns a monster at that fridge at 36 s): host `Player 1 hid in a
+  fridge` → `pulling client 1 out of the fridge` → `caught client 1 (KickBackPlayer)`; client `pulled
+  out of the fridge` → kill → spectating → Morning revive; host survived; no exceptions.
+- The "can't see a hidden remote player" part is the same getter but wasn't isolated in a test.
+
+### Night doors, planks, chains, monster hands (2026-10-27)
+
+`DoorSync.cs` (world ch 17 at 5 Hz, action ch 18); ids = scene-path hash (`ShelfSync.PathId`).
+- Host → client: each `MarketManager.Doors` door: open, target angle, plank count, chained; each
+  `MonsterHand`: handCenter shown, animator layer-0 state/time and float/int/bool params.
+- Client matches doors (Open/CloseDoor, SetTargetAngle, `CreateBarricade` / `BreakPlank`,
+  `DoorChain.Chained/Unchained`) and animates hands; the hands' animation events (ThrowWood, Unchain,
+  SuccessInvasion, StopInvasion) don't run on the client.
+- Client → host: door open/close, `BoardUp` (host adds a plank without needing a plank in hand),
+  chain on/off, `MonsterHand.Damaged` (the hit; host pays and the hand retreats).
+- Gotchas: `DoorBarricadeManager.CanBoardUp` is the player's check (plank in hand, in front), so sync
+  uses a free-slot check; not every `InvasionEvents` has hand data (null → MonsterHand.Update NRE spam);
+  anomaly products aren't in ProductManager → `Products.Find` falls back to every loaded ProductData.
+- Test (`HMCOOP_DOORTEST=host/client`, both step inside at 24 s): host 2 planks on 3 doors + Night +
+  invasion; client nailed one (`now 3`), hand tore 2 off: both sides 7 → 5 planks, 2 chained, 0/3 open;
+  client hit the hand → host `hit the monster hand Monster Hand Vent Backside` → hands 1 → 0 on both.
+  No exceptions.
+- `DoorInvasion._state = Invasion` (door shaking + QTE) is never set by the game code, so not synced.
+
 Not synced yet / known gaps:
-- Hiding in the fridge isn't synced: the host's monster doesn't know when a remote player is hiding.
-- Remote players can't hide in the fridge yet (MonsterManager.IsHeroHidden is the host's).
-- Doors at night (DoorCore/DoorInvasion/DoorShake), barricades, chains, monster hands, anomalies
-  are not synced yet.
+- Anomalies (AnomalySpawner/AnomalyBehavior/AnomalyProduct) beyond the monster they cause.
 - Customers who want cigarettes (DefaultCustomer `wannaCigarette`) ask before paying; handing
   cigarettes from the client is not forwarded yet (the host log says so when it happens).
 - The host's own cashier work while a client is seated isn't arbitrated (two cashiers at once).

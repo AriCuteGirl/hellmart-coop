@@ -14,6 +14,7 @@ namespace HellmartCoop
             public Vector3 TargetPosition;
             public float TargetYaw;
             public float TargetPitch;
+            public bool InFridge;
             public uint LastSeq;
             public float LastHeard;
         }
@@ -54,6 +55,12 @@ namespace HellmartCoop
             p.TargetPosition = state.Position;
             p.TargetYaw = state.Yaw;
             p.TargetPitch = state.Pitch;
+            if (p.InFridge != state.InFridge)
+            {
+                p.InFridge = state.InFridge;
+                SetVisible(p, !p.InFridge && hidden != state.Id);
+                Plugin.Log.LogInfo($"Player {state.Id} {(p.InFridge ? "hid in a fridge" : "left the fridge")}");
+            }
             p.LastHeard = Time.unscaledTime;
         }
 
@@ -98,7 +105,7 @@ namespace HellmartCoop
                 return;
             hidden = id;
             foreach (var pair in puppets)
-                SetVisible(pair.Value, pair.Key != id);
+                SetVisible(pair.Value, pair.Key != id && !pair.Value.InFridge);
         }
 
         private static void SetVisible(Puppet p, bool visible)
@@ -118,6 +125,8 @@ namespace HellmartCoop
                     yield return (pair.Key, pair.Value.TargetPosition, pair.Value.TargetYaw, pair.Value.TargetPitch);
             }
         }
+
+        public bool IsInFridge(byte id) => puppets.TryGetValue(id, out var p) && p.InFridge;
 
         public void Clear()
         {
