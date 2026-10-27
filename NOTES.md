@@ -393,6 +393,32 @@ each puppet (subtitle font, player color lightened, faces our camera, hidden wit
 name (`Steamworks.SteamClient.Name`) when Steam/PupBerg is up, else config `[Player] Name`, else the PC user
 name; max 24 chars. Test with config names: host saw "Bestie", Ari saw "Ari" from the client.
 
+### Steam/PupBerg lobbies and the co-op relay (2026-10-28)
+
+- Steam P2P (`Net` + `SteamLobby.cs`): `Net` addresses SteamIDs through stand-in endpoints (port 1) and
+  sends with `SendP2PPacket` (channel 0); the host listens on UDP and Steam at once (switches Steam on once
+  the game has brought it up). Host game makes a friends-only lobby + rich presence `connect`; Invite friends
+  opens `OpenGameInviteOverlay`; joining via `OnGameLobbyJoinRequested`, `OnGameRichPresenceJoinRequested`
+  or `+connect_lobby`. Save over Steam channel 1 (reliable). Under PupBerg 0.1.6 (App ID 3762550, test
+  accounts Ari/Bestie) Steam comes up; the lobby join itself is not verified yet (first test host hosted
+  before Steam was up, fixed after, not re-run). Real Steam and PupBerg players are separate networks, so
+  mixed groups use IP or the relay.
+- PupBerg overlay: the debug DLL asserts (ImGui texture not uploaded); the 0.1.6 release DLL opens but the
+  text is blank in both frontends (its DX11 hook doesn't upload ImGui's dynamic font texture). Saved prefs
+  (`GSE Saves/settings/pupberg_prefs.json`, `classic_frontend`) override the ini. Not fixed (PupBerg repo).
+- Relay (`server/` relay script, UDP 27360): rooms with 4-letter codes, forwards between host and friends,
+  `data/status.json` every 2 s, `data/close/<CODE>` closes a room, health `HMR1?` -> `HMR1!`.
+  `server/manage.py`: info/rooms/players/player/close (+ settings/backup/logs stubs). `manager/game.json`
+  (category coop, rooms, udp health) + icon/art for Server Manager (import/Co-op/Rooms support built in a
+  separate session, uncommitted in `~/Projects/Server Manager`).
+- Mod: `[Network] RelayAddress`; Host game also opens a relay room (code on the Co-op button and an in-game
+  "ROOM XXXX" label); the Host IP field takes a room code and Join goes through the relay; the save comes
+  through the relay in 1000-byte chunks (`HMS?`/`HMSC`, re-asked until complete); reload-together reuses
+  the code. Test (local relay, `HMCOOP_MENUTEST=relayjoin`): room 62C2, client joined, 44303-byte save
+  installed, puppets + names both ways, `manage.py` showed the room with both players.
+  Log `local/logs/relay-test-2026-10-28.log`.
+- Gotcha: never `pgrep -f`/`kill` by a pattern that also appears in the same shell command.
+
 Not synced yet / known gaps:
 - Dialogues away from the register (other NPC chats) still run on whoever starts them.
 - Scares and unique story events, Steam invites.

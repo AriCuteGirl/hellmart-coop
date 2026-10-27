@@ -54,10 +54,177 @@ namespace HellmartCoop
         private readonly Dictionary<IPEndPoint, Client> clients = new Dictionary<IPEndPoint, Client>();
         private byte nextClientId = 1;
         private readonly ConcurrentQueue<(IPEndPoint from, byte[] data)> inbox = new ConcurrentQueue<(IPEndPoint, byte[])>();
-        private readonly Thread receiver;
+        private readonly Thread receiver; // UDP only
         private volatile bool running = true;
         private uint seq;
 
+        // Relay (hmrelay.py on a server): host and friends connect out to it and it forwards between
+        // them by room code, so nobody forwards ports. Like Steam, each relay peer gets a stand-in
+        // endpoint (10.200.x.y, port 2) and Send wraps packets for the relay.
+        private static readonly byte[] RelayMagic = { (byte)'H', (byte)'M', (byte)'R', (byte)'1' };
+        private const byte RCreate = 1, RCreated = 2, RJoin = 3, RJoined = 4, RError = 5, RData = 6, RPing = 7, RLeft = 8;
+        private IPEndPoint relay;
+        private readonly Dictionary<IPEndPoint, ushort> relayPeers = new Dictionary<IPEndPoint, ushort>();
+        private readonly Dictionary<ushort, IPEndPoint> relayById = new Dictionary<ushort, IPEndPoint>();
+        private float nextRelayPing;
+
+        public string RoomCode { get; private set; }
+        public string RelayError { get; private set; }
+        public bool RelayJoined { get; private set; }
+        public bool UsesRelay => relay != null;
+
+        // Called from the receive thread and the main thread.
+        private IPEndPoint RelayEndPoint(ushort peer)
+        {
+            lock (relayPeers)
+            {
+                if (!relayById.TryGetValue(peer, out var ep))
+                {
+                    ep = new IPEndPoint(new IPAddress(new byte[] { 10, 200, (byte)(peer >> 8), (byte)peer }), 2);
+                    relayById[peer] = ep;
+                    relayPeers[ep] = peer;
+                }
+                return ep;
+            }
+        }
+
+        private static byte[] RelayPacket(byte type, byte[] body)
+        {
+            var packet = new byte[5 + body.Length];
+            Buffer.BlockCopy(RelayMagic, 0, packet, 0, 4);
+            packet[4] = type;
+            Buffer.BlockCopy(body, 0, packet, 5, body.Length);
+            return packet;
+        }
+
+        private static byte[] RelayStr(params string[] parts)
+        {
+            using (var ms = new MemoryStream())
+            {
+                foreach (var part in parts)
+                {
+                    var b = System.Text.Encoding.UTF8.GetBytes(part ?? "");
+                    int n = Math.Min(b.Length, 64);
+                    ms.WriteByte((byte)n);
+                    ms.Write(b, 0, n);
+                }
+                return ms.ToArray();
+            }
+        }
+
+        private static IPEndPoint ParseRelay(string address)
+        {
+            // "host:port" or "host" (default port 27360); host may be a name.
+            string host = address.Trim();
+            int port = 27360;
+            int colon = host.LastIndexOf(':');
+            if (colon > 0 && int.TryParse(host.Substring(colon + 1), out int p))
+            {
+                port = p;
+                host = host.Substring(0, colon);
+            }
+            if (!IPAddress.TryParse(host, out var ip))
+                ip = Dns.GetHostAddresses(host)[0];
+            return new IPEndPoint(ip, port);
+        }
+
+        // Host: also open a room on the relay (the code arrives as RoomCode).
+        public void OpenRelayRoom(string relayAddress, string name)
+        {
+            relay = ParseRelay(relayAddress);
+            createPacket = RelayPacket(RCreate, RelayStr(name));
+            udp.Send(createPacket, createPacket.Length, relay);
+        }
+
+        private byte[] createPacket;
+
+        // Client through a relay room.
+        public Net(string relayAddress, string code, string name)
+        {
+            IsHost = false;
+            LocalId = 255;
+            relay = ParseRelay(relayAddress);
+            udp = new UdpClient(new IPEndPoint(IPAddress.Any, 0));
+            hostEndPoint = new IPEndPoint(new IPAddress(new byte[] { 10, 200, 255, 255 }), 2);
+            receiver = new Thread(ReceiveLoop) { IsBackground = true, Name = "HellmartCoop.Net" };
+            receiver.Start();
+            var join = RelayPacket(RJoin, RelayStr(code.Trim().ToUpperInvariant(), name));
+            udp.Send(join, join.Length, relay);
+            joinPacket = join;
+        }
+
+        private byte[] joinPacket;
+
+        // Relay control messages; data packets become ordinary inbox items from stand-in endpoints.
+        private bool HandleRelay(IPEndPoint from, byte[] data)
+        {
+            if (relay == null || !from.Equals(relay) || data.Length < 5 || data[0] != 'H' || data[1] != 'M' || data[2] != 'R' || data[3] != '1')
+                return false;
+            switch (data[4])
+            {
+                case RCreated:
+                    RoomCode = System.Text.Encoding.UTF8.GetString(data, 6, data[5]);
+                    break;
+                case RJoined:
+                    RelayJoined = true;
+                    break;
+                case RError:
+                    RelayError = System.Text.Encoding.UTF8.GetString(data, 6, data[5]);
+                    break;
+                case RData:
+                    if (IsHost)
+                    {
+                        ushort peer = BitConverter.ToUInt16(data, 5);
+                        var payload = new byte[data.Length - 7];
+                        Buffer.BlockCopy(data, 7, payload, 0, payload.Length);
+                        inbox.Enqueue((RelayEndPoint(peer), payload));
+                    }
+                    else
+                    {
+                        var payload = new byte[data.Length - 5];
+                        Buffer.BlockCopy(data, 5, payload, 0, payload.Length);
+                        inbox.Enqueue((hostEndPoint, payload));
+                    }
+                    break;
+            }
+            return true;
+        }
+
+        private void RelayKeepAlive()
+        {
+            if (relay == null || Time.unscaledTime < nextRelayPing)
+                return;
+            nextRelayPing = Time.unscaledTime + 3f;
+            // Until the relay answers, keep asking (UDP); after that, a ping keeps the mapping open.
+            byte[] packet = !IsHost && !RelayJoined && joinPacket != null ? joinPacket
+                : IsHost && RoomCode == null && createPacket != null ? createPacket
+                : RelayPacket(RPing, new byte[0]);
+            try
+            {
+                udp.Send(packet, packet.Length, relay);
+            }
+            catch (SocketException)
+            {
+            }
+        }
+
+        // Steam P2P (also PupBerg): peers are SteamIDs. Everything above works on IPEndPoints, so each
+        // SteamID gets a stand-in endpoint (port 1, never a real UDP peer) and Send routes those to Steam.
+        private const int SteamChannel = 0;
+        private bool steam;
+        private readonly Dictionary<IPEndPoint, Steamworks.SteamId> steamPeers = new Dictionary<IPEndPoint, Steamworks.SteamId>();
+
+        public bool UsesSteam => steam;
+
+        private IPEndPoint SteamEndPoint(Steamworks.SteamId id)
+        {
+            ulong v = id.Value;
+            var ep = new IPEndPoint(new IPAddress(new[] { (byte)(v >> 24), (byte)(v >> 16), (byte)(v >> 8), (byte)v }), 1);
+            steamPeers[ep] = id;
+            return ep;
+        }
+
+        // UDP host (plus Steam when it's up) or UDP client.
         public Net(bool isHost, string hostAddress, int port)
         {
             IsHost = isHost;
@@ -65,6 +232,7 @@ namespace HellmartCoop
             {
                 LocalId = 0;
                 udp = new UdpClient(new IPEndPoint(IPAddress.Any, port));
+                steam = SteamUp();
             }
             else
             {
@@ -75,6 +243,55 @@ namespace HellmartCoop
             }
             receiver = new Thread(ReceiveLoop) { IsBackground = true, Name = "HellmartCoop.Net" };
             receiver.Start();
+            if (steam)
+                AcceptSteamSessions();
+        }
+
+        // Steam client: everything to and from the host's SteamID.
+        public Net(Steamworks.SteamId host)
+        {
+            IsHost = false;
+            LocalId = 255;
+            steam = true;
+            hostEndPoint = SteamEndPoint(host);
+            AcceptSteamSessions();
+        }
+
+        private static bool SteamUp()
+        {
+            try
+            {
+                return Steamworks.SteamClient.IsValid;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static void AcceptSteamSessions()
+        {
+            Steamworks.SteamNetworking.AllowP2PPacketRelay(true);
+            Steamworks.SteamNetworking.OnP2PSessionRequest = id => Steamworks.SteamNetworking.AcceptP2PSessionWithUser(id);
+        }
+
+        private void PollSteam()
+        {
+            // A host made before the game brought Steam up: switch Steam on once it is.
+            if (!steam && IsHost && SteamUp())
+            {
+                steam = true;
+                AcceptSteamSessions();
+                Plugin.Log.LogInfo("Steam is up: hosting on Steam as well");
+            }
+            if (!steam)
+                return;
+            while (Steamworks.SteamNetworking.IsP2PPacketAvailable(SteamChannel))
+            {
+                var packet = Steamworks.SteamNetworking.ReadP2PPacket(SteamChannel);
+                if (packet.HasValue)
+                    inbox.Enqueue((SteamEndPoint(packet.Value.SteamId), packet.Value.Data));
+            }
         }
 
         private void ReceiveLoop()
@@ -85,7 +302,8 @@ namespace HellmartCoop
                 {
                     IPEndPoint from = null;
                     byte[] data = udp.Receive(ref from);
-                    inbox.Enqueue((from, data));
+                    if (!HandleRelay(from, data))
+                        inbox.Enqueue((from, data));
                 }
                 catch (SocketException)
                 {
@@ -96,6 +314,74 @@ namespace HellmartCoop
                     return;
                 }
             }
+        }
+
+        // ---- the host's save over plain datagrams (for the relay, which has no stream) ----
+        // Client → host: "HMS?" + u16 count + u16 chunk indexes it still needs (count 0 = all).
+        // Host → client: "HMSC" + u16 index + u16 total + up to 1000 bytes of SaveShare's wire format.
+        private const int SaveChunk = 1000;
+        private byte[] saveCache;
+        private float saveCacheUntil;
+        public event Action<int, int, byte[]> SaveChunkReceived;
+
+        public void RequestSaveChunks(IList<int> missing)
+        {
+            using (var ms = new MemoryStream())
+            using (var w = new BinaryWriter(ms))
+            {
+                w.Write(System.Text.Encoding.ASCII.GetBytes("HMS?"));
+                int n = Math.Min(missing.Count, 200);
+                w.Write((ushort)n);
+                for (int i = 0; i < n; i++)
+                    w.Write((ushort)missing[i]);
+                var packet = ms.ToArray();
+                Send(packet, hostEndPoint);
+            }
+        }
+
+        private bool TryHandleSaveChunks(byte[] data, IPEndPoint from)
+        {
+            if (data.Length < 6 || data[0] != 'H' || data[1] != 'M' || data[2] != 'S')
+                return false;
+            if (data[3] == '?' && IsHost)
+            {
+                if (saveCache == null || Time.unscaledTime > saveCacheUntil)
+                {
+                    saveCache = SaveShare.HostSaveBytes();
+                    saveCacheUntil = Time.unscaledTime + 30f;
+                }
+                int total = (saveCache.Length + SaveChunk - 1) / SaveChunk;
+                int n = BitConverter.ToUInt16(data, 4);
+                var wanted = new List<int>();
+                if (n == 0)
+                    for (int i = 0; i < total; i++) wanted.Add(i);
+                else
+                    for (int i = 0; i < n && 6 + i * 2 + 1 < data.Length; i++) wanted.Add(BitConverter.ToUInt16(data, 6 + i * 2));
+                foreach (int index in wanted)
+                {
+                    if (index >= total)
+                        continue;
+                    int offset = index * SaveChunk;
+                    int len = Math.Min(SaveChunk, saveCache.Length - offset);
+                    var packet = new byte[8 + len];
+                    packet[0] = (byte)'H'; packet[1] = (byte)'M'; packet[2] = (byte)'S'; packet[3] = (byte)'C';
+                    BitConverter.GetBytes((ushort)index).CopyTo(packet, 4);
+                    BitConverter.GetBytes((ushort)total).CopyTo(packet, 6);
+                    Buffer.BlockCopy(saveCache, offset, packet, 8, len);
+                    Send(packet, from);
+                }
+                return true;
+            }
+            if (data[3] == 'C' && !IsHost && data.Length >= 8)
+            {
+                int index = BitConverter.ToUInt16(data, 4);
+                int total = BitConverter.ToUInt16(data, 6);
+                var chunk = new byte[data.Length - 8];
+                Buffer.BlockCopy(data, 8, chunk, 0, chunk.Length);
+                SaveChunkReceived?.Invoke(index, total, chunk);
+                return true;
+            }
+            return false;
         }
 
         public void SendState(PlayerState state)
@@ -117,6 +403,8 @@ namespace HellmartCoop
         // Drains received packets on the main thread; calls onState for every remote player state.
         public void Poll(Action<PlayerState> onState)
         {
+            PollSteam();
+            RelayKeepAlive();
             while (inbox.TryDequeue(out var item))
             {
                 if (IsHost && IsBye(item.data))
@@ -125,7 +413,7 @@ namespace HellmartCoop
                         DropClient(item.from, leaving, "left");
                     continue;
                 }
-                if (TryDispatchWorld(item.data) || TryHandleAction(item.data, item.from))
+                if (TryHandleSaveChunks(item.data, item.from) || TryDispatchWorld(item.data) || TryHandleAction(item.data, item.from))
                     continue;
                 if (!TryDecode(item.data, out var state))
                     continue;
@@ -191,6 +479,49 @@ namespace HellmartCoop
 
         private void Send(byte[] packet, IPEndPoint to)
         {
+            if (to == null)
+                return;
+            if (relay != null)
+            {
+                byte[] wrapped = null;
+                if (IsHost)
+                {
+                    ushort peer;
+                    bool known;
+                    lock (relayPeers)
+                        known = relayPeers.TryGetValue(to, out peer);
+                    if (known)
+                    {
+                        wrapped = new byte[7 + packet.Length];
+                        Buffer.BlockCopy(RelayMagic, 0, wrapped, 0, 4);
+                        wrapped[4] = RData;
+                        BitConverter.GetBytes(peer).CopyTo(wrapped, 5);
+                        Buffer.BlockCopy(packet, 0, wrapped, 7, packet.Length);
+                    }
+                }
+                else if (to.Equals(hostEndPoint))
+                {
+                    wrapped = RelayPacket(RData, packet);
+                }
+                if (wrapped != null)
+                {
+                    try
+                    {
+                        udp.Send(wrapped, wrapped.Length, relay);
+                    }
+                    catch (SocketException)
+                    {
+                    }
+                    return;
+                }
+            }
+            if (steamPeers.TryGetValue(to, out var steamId))
+            {
+                Steamworks.SteamNetworking.SendP2PPacket(steamId, packet, packet.Length, SteamChannel, Steamworks.P2PSend.Unreliable);
+                return;
+            }
+            if (udp == null)
+                return;
             try
             {
                 udp.Send(packet, packet.Length, to);
@@ -438,7 +769,12 @@ namespace HellmartCoop
             if (!IsHost)
                 Send(EncodeBye(), hostEndPoint);
             running = false;
-            udp.Close();
+            udp?.Close();
+            if (steam)
+            {
+                foreach (var id in steamPeers.Values)
+                    Steamworks.SteamNetworking.CloseP2PSessionWithUser(id);
+            }
         }
     }
 }

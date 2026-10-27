@@ -95,6 +95,35 @@ namespace HellmartCoop
             }
         }
 
+        // The host's active slot in the wire format, for transports without a stream (Steam P2P).
+        public static byte[] HostSaveBytes()
+        {
+            var info = SaveSlots.ReadSlotInfo(SaveSlots.GetActiveSlotId());
+            string metaPath = Path.Combine(info.DirectoryPath, "meta.json");
+            byte[] meta = File.Exists(metaPath) ? File.ReadAllBytes(metaPath) : Array.Empty<byte>();
+            byte[] save = File.Exists(info.SavePath) ? File.ReadAllBytes(info.SavePath) : Array.Empty<byte>();
+            using (var ms = new MemoryStream(save.Length + meta.Length + 16))
+            using (var w = new BinaryWriter(ms))
+            {
+                w.Write(Encoding.ASCII.GetBytes(Magic));
+                w.Write(meta.Length);
+                w.Write(meta);
+                w.Write(save.Length);
+                w.Write(save);
+                return ms.ToArray();
+            }
+        }
+
+        public static Received Parse(byte[] data)
+        {
+            using (var r = new BinaryReader(new MemoryStream(data)))
+            {
+                if (Encoding.ASCII.GetString(r.ReadBytes(4)) != Magic)
+                    throw new InvalidDataException("not a Hellmart Coop save");
+                return new Received { Meta = ReadBlock(r), Save = ReadBlock(r) };
+            }
+        }
+
         public class Received
         {
             public byte[] Meta;

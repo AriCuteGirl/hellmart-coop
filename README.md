@@ -26,7 +26,7 @@ others join, and you run the store and survive the nights together. No game file
 - Supplies (planks, canisters, traps) go to the buyer's own inventory; the money is shared.
 - A box in someone's hands isn't visible to the other players.
 - Scares and special story events still happen separately for each player.
-- Joining is by IP (UDP + TCP port 27350, forward it on the host's router); Steam invites are planned.
+- Direct IP joining needs UDP + TCP port 27350 forwarded on the host's router (the relay and Steam don't).
 - Tested with two copies on one Linux PC (Proton); details and test logs are in `NOTES.md`.
 
 ## Install
@@ -41,6 +41,19 @@ others join, and you run the store and survive the nights together. No game file
 
    The build copies `HellmartCoop.dll` to `<game>/BepInEx/plugins/HellmartCoop/`.
 3. Everyone who plays needs the same plugin build.
+
+## Play over a relay (no port forwarding)
+
+A small relay (`server/hmrelay.py`, UDP 27360) can run on any server, e.g. through Server Manager
+(`manager/game.json`). Everyone sets `RelayAddress = <server>:27360` under `[Network]` in
+`BepInEx/config/ari.hellmart.coop.cfg`. The host presses **Host game** and gets a room code (shown on the
+Co-op button and as "ROOM XXXX" in game); friends type the code into **Host IP** and press **Join**.
+
+## Steam and PupBerg
+
+With Steam running, **Host game** also makes a friends-only Steam lobby: use **Invite friends** or join from
+the friends list. PupBerg players can do the same among themselves. Real-Steam and PupBerg players can't see
+each other's lobbies, so mixed groups use the relay or an IP.
 
 ## Play
 

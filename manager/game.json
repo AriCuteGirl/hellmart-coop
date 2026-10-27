@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "id": "hellmart-coop",
+  "name": "HELLMART Co-op",
+  "publisher": "co-op mod",
+  "platform": "PC",
+  "category": "coop",
+  "rooms": true,
+  "description": "Online co-op for HELLMART: a small UDP relay with room codes, so nobody has to forward ports.",
+  "icon": "manager/icon.svg",
+  "art": "manager/art.svg",
+  "accent": "#dc2626",
+  "repo": "https://github.com/AriCuteGirl/hellmart-coop",
+  "source": {"github": "AriCuteGirl/hellmart-coop", "ref": "main"},
+  "server": {
+    "dir": "server",
+    "files": ["hmrelay.py", "manage.py"],
+    "install_dir": "~/hellmart-relay",
+    "start": "python3 -u hmrelay.py",
+    "requires": "python3 >= 3.9",
+    "env": {"HMRELAY_PORT": "{port:relay}", "HMRELAY_DATA": "{data_dir}"},
+    "ports": [
+      {"name": "relay", "label": "Co-op relay (UDP)", "default": 27360, "protocol": "udp", "required": true}
+    ],
+    "health": {"type": "udp", "udp": [{"port": "relay", "send": "HMR1?", "expect": "HMR1!"}]},
+    "data_dir": "data",
+    "service_name": "hellmart-relay",
+    "systemd_extra": ["RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX", "RestrictNamespaces=yes", "MemoryMax=200M", "UMask=0077"]
+  },
+  "manage": "server/manage.py",
+  "client": {
+    "title": "How players join",
+    "how_to": [
+      "Everyone installs the HELLMART Co-op mod (BepInEx).",
+      "In the mod's co-op menu, set the relay address to:",
+      "$ {public_host}:{port}",
+      "The host opens a room and shares the 4-letter room code; friends join with it."
+    ]
+  }
+}

@@ -58,6 +58,49 @@ namespace HellmartCoop
             tmp.outlineColor = new Color32(0, 0, 0, 220);
         }
 
+        // "ROOM K7Q2" in the top-left corner while hosting a relay room (null hides it).
+        private static GameObject roomRoot;
+        private static TextMeshProUGUI roomText;
+
+        public static void SetRoom(string code)
+        {
+            if (code == null)
+            {
+                if (roomRoot != null)
+                    roomRoot.SetActive(false);
+                return;
+            }
+            if (roomRoot == null)
+            {
+                roomRoot = new GameObject("CoopRoomLabel");
+                Object.DontDestroyOnLoad(roomRoot);
+                var canvas = roomRoot.AddComponent<Canvas>();
+                canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+                canvas.sortingOrder = 400;
+                var scaler = roomRoot.AddComponent<CanvasScaler>();
+                scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+                scaler.referenceResolution = new Vector2(1920f, 1080f);
+                var go = new GameObject("Text", typeof(RectTransform));
+                go.transform.SetParent(roomRoot.transform, false);
+                var rect = (RectTransform)go.transform;
+                rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0f, 1f);
+                rect.anchoredPosition = new Vector2(28f, -22f);
+                rect.sizeDelta = new Vector2(600f, 60f);
+                roomText = go.AddComponent<TextMeshProUGUI>();
+                var font = GameFont();
+                if (font != null)
+                    roomText.font = font;
+                roomText.fontSize = 30f;
+                roomText.color = new Color(1f, 1f, 1f, 0.85f);
+                roomText.outlineWidth = 0.2f;
+                roomText.outlineColor = new Color32(0, 0, 0, 200);
+                roomText.raycastTarget = false;
+            }
+            roomText.text = $"ROOM {code}";
+            if (!roomRoot.activeSelf)
+                roomRoot.SetActive(true);
+        }
+
         // The game's subtitle font (the serif used for the player's lines); otherwise the most used font
         // among its UI texts, not counting TMP's built-in fallback.
         private static TMP_FontAsset GameFont()

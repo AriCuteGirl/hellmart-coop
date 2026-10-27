@@ -52,6 +52,8 @@ namespace HellmartCoop
             ((RectTransform)layout).anchoredPosition += new Vector2(0f, row);
 
             coopButtons.Add(Clone(template, "Coop Host Button", "Host game", Host));
+            // Steam / PupBerg: invite friends to the lobby Host game made.
+            coopButtons.Add(Clone(template, "Coop Invite Button", "Invite friends", Invite));
             coopButtons.Add(AddressField(template));
             var join = Clone(template, "Coop Join Button", "Join", Join);
             joinLabel = join.GetComponentInChildren<TMP_Text>();
@@ -79,6 +81,16 @@ namespace HellmartCoop
 
             RefreshGamepad();
             Plugin.Log.LogInfo("Co-op menu: button added");
+            try
+            {
+                Plugin.Log.LogInfo(Steamworks.SteamClient.IsValid
+                    ? $"Steam: up as '{Steamworks.SteamClient.Name}' ({Steamworks.SteamClient.SteamId}), app {Steamworks.SteamClient.AppId}"
+                    : "Steam: not running (IP join only)");
+            }
+            catch (System.Exception e)
+            {
+                Plugin.Log.LogInfo($"Steam: not available ({e.GetType().Name})");
+            }
 
             // Test hooks: open the sub-menu for layout screenshots; host starts its game; client joins.
             string test = System.Environment.GetEnvironmentVariable("HMCOOP_MENUTEST");
@@ -88,6 +100,59 @@ namespace HellmartCoop
                 menu.PlayGame();
             else if (test == "join")
                 Plugin.Instance.StartCoroutine(JoinWhenHostIsUp());
+            else if (test == "relayjoin")
+                Plugin.Instance.StartCoroutine(JoinRelayRoomFromStatus());
+            else if (test == "steamjoin")
+                Plugin.Instance.StartCoroutine(FindSteamLobby());
+        }
+
+        // Test: read the room code from a local relay's status.json (HMCOOP_ROOMFILE), type it, Join.
+        private static System.Collections.IEnumerator JoinRelayRoomFromStatus()
+        {
+            string path = System.Environment.GetEnvironmentVariable("HMCOOP_ROOMFILE");
+            for (int attempt = 0; attempt < 60; attempt++)
+            {
+                yield return new WaitForSecondsRealtime(2f);
+                string code = null;
+                try
+                {
+                    var text = System.IO.File.ReadAllText(path);
+                    int i = text.IndexOf("\"code\": \"");
+                    if (i >= 0)
+                        code = text.Substring(i + 9, 4);
+                }
+                catch (System.Exception)
+                {
+                }
+                if (code == null)
+                    continue;
+                Plugin.Instance.JoinAddress = code;
+                Plugin.Log.LogInfo($"Relay test: joining room {code}");
+                OpenCoopMenu();
+                Join();
+                yield break;
+            }
+        }
+
+        // Test: a bot can't click the invite overlay, so find the host's lobby by searching instead.
+        private static System.Collections.IEnumerator FindSteamLobby()
+        {
+            for (int attempt = 0; attempt < 30; attempt++)
+            {
+                yield return new WaitForSecondsRealtime(3f);
+                if (!SteamLobby.SteamUp)
+                    continue;
+                var query = Steamworks.SteamMatchmaking.LobbyList.WithKeyValue("hellmart_coop", "1").RequestAsync();
+                while (!query.IsCompleted)
+                    yield return null;
+                var found = query.Result;
+                Plugin.Log.LogInfo($"Steam test: {(found?.Length ?? 0)} lobbies found");
+                if (found != null && found.Length > 0)
+                {
+                    Traverse.Create(typeof(SteamLobby)).Field("pendingLobby").SetValue(found[0].Id.Value);
+                    yield break;
+                }
+            }
         }
 
         private static System.Collections.IEnumerator JoinWhenHostIsUp()
@@ -185,18 +250,36 @@ namespace HellmartCoop
             menu.OpenSaveSlotsOrNewGame();
         }
 
-        private static void Join()
+        private static void Invite()
         {
-            if (joining)
+            if (!SteamLobby.SteamUp)
+            {
+                Plugin.Log.LogInfo("Co-op menu: Steam isn't running, share your IP instead");
+                return;
+            }
+            if (!SteamLobby.HasLobby)
+                Plugin.Log.LogInfo("Co-op menu: press Host game first, then invite");
+            SteamLobby.Invite();
+        }
+
+        // An accepted Steam invite / "Join game" (or +connect_lobby): join once the main menu is up.
+        public static void JoinPendingSteamLobby()
+        {
+            if (menu == null || joining)
+                return;
+            ulong lobbyId = SteamLobby.TakePendingLobby();
+            if (lobbyId == 0)
                 return;
             joining = true;
-            joinLabel.text = $"Joining {Plugin.Instance.JoinAddress}...";
-            Plugin.Instance.StartCoroutine(Plugin.Instance.Join(error =>
+            if (joinLabel != null)
+                joinLabel.text = "Joining over Steam...";
+            Plugin.Instance.StartCoroutine(Plugin.Instance.JoinSteam(lobbyId, error =>
             {
                 joining = false;
                 if (error != null)
                 {
-                    joinLabel.text = "Join (no host found)";
+                    if (joinLabel != null)
+                        joinLabel.text = "Join (Steam join failed)";
                     return;
                 }
                 CloseCoopMenu();
@@ -204,12 +287,39 @@ namespace HellmartCoop
             }));
         }
 
+        private static void Join()
+        {
+            if (joining)
+                return;
+            joining = true;
+            string target = Plugin.Instance.JoinAddress;
+            joinLabel.text = $"Joining {target}...";
+            System.Action<string> done = error =>
+            {
+                joining = false;
+                if (error != null)
+                {
+                    joinLabel.text = "Join (no host found)";
+                    Plugin.Log.LogWarning($"Join {target}: {error}");
+                    return;
+                }
+                CloseCoopMenu();
+                menu.PlayGame();
+            };
+            // A room code (e.g. K7Q2) goes through the relay; anything else is an IP.
+            Plugin.Instance.StartCoroutine(Plugin.LooksLikeRoomCode(target)
+                ? Plugin.Instance.JoinRelay(target, done)
+                : Plugin.Instance.Join(done));
+        }
+
         private static string CoopStatusText()
         {
             var net = Plugin.Instance.Net;
             if (net == null)
                 return "Co-op";
-            return net.IsHost ? "Co-op (hosting)" : "Co-op (joined)";
+            if (net.IsHost)
+                return net.RoomCode != null ? $"Co-op (room {net.RoomCode})" : "Co-op (hosting)";
+            return "Co-op (joined)";
         }
 
         // The gamepad navigator caches its button list in OnEnable; make it pick up the changes.
