@@ -437,6 +437,15 @@ name; max 24 chars. Test with config names: host saw "Bestie", Ari saw "Ari" fro
   Logs `local/logs/oracle-relay-{host,client}.log`.
 - The server address stays out of the repo (players set `RelayAddress` themselves).
 
+### Text chat (2026-10-28, asked for by Ari's friend)
+
+`ChatSync.cs`: Enter or T opens a line at the bottom-left (game font, sender's color), Enter sends, Esc
+cancels; while typing the game's InputActions are disabled and PauseManager.Update is skipped (Esc doesn't
+open the pause menu). Client → host action ch 32; host numbers each line and broadcasts on world ch 33
+(repeated, deduped). Text: whole `<tags>` removed, 120 chars max. Lines fade after 12 s (all shown while
+typing). Tested: Ari typed in both copies by hand ("test123" / "test"), both showed on both sides.
+Also: the Co-op sub-menu (7 rows) lifts one more row while open so Back stays off the border.
+
 Not synced yet / known gaps:
 - Dialogues away from the register (other NPC chats) still run on whoever starts them.
 - Scares and unique story events, Steam invites.

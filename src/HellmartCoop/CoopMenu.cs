@@ -35,6 +35,7 @@ namespace HellmartCoop
 
             gameButtons.Clear();
             coopButtons.Clear();
+            lifted = false;
             for (int i = 0; i < layout.childCount; i++)
                 gameButtons.Add(layout.GetChild(i).gameObject);
 
@@ -50,6 +51,7 @@ namespace HellmartCoop
             if (group != null)
                 row += group.spacing;
             ((RectTransform)layout).anchoredPosition += new Vector2(0f, row);
+            rowHeight = row;
 
             coopButtons.Add(Clone(template, "Coop Host Button", "Host game", Host));
             // Steam / PupBerg: invite friends to the lobby Host game made.
@@ -224,8 +226,21 @@ namespace HellmartCoop
         private static string ColorLabel() => $"Color: {PlayerLook.ColorName}";
         private static string LookLabel() => $"Look: {PlayerLook.AccessoryName}";
 
+        // The sub-menu has one row more than the main column: lift it while it's open.
+        private static float rowHeight;
+        private static bool lifted;
+
+        private static void Lift(bool up)
+        {
+            if (lifted == up || layout == null)
+                return;
+            lifted = up;
+            ((RectTransform)layout).anchoredPosition += new Vector2(0f, up ? rowHeight : -rowHeight);
+        }
+
         private static void OpenCoopMenu()
         {
+            Lift(true);
             foreach (var go in gameButtons)
                 go.SetActive(false);
             foreach (var go in coopButtons)
@@ -235,6 +250,7 @@ namespace HellmartCoop
 
         private static void CloseCoopMenu()
         {
+            Lift(false);
             foreach (var go in coopButtons)
                 go.SetActive(false);
             foreach (var go in gameButtons)

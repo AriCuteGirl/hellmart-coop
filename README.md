@@ -16,6 +16,7 @@ others join, and you run the store and survive the nights together. No game file
 - **Clients can do things**: open the sign/door, restock shelves, work the register (scan, bag, take
   cash, give change, finish the sale, answer the customer's questions, hand over cigarettes), refuel/repair the generator, nail planks,
   chain doors, hit monster hands, clear anomalies, mop and shovel, hide in fridges, take/put back storage boxes, order refills.
+- **Text chat**: press Enter (or T) to type, Enter to send, Esc to cancel.
 - **Pausing** only pauses you; the world keeps running.
 - **Monsters** hunt whoever is closest. A caught player **spectates until morning** ("SPECTATING"
   banner). The run is lost only when everyone is dead or the quota is missed; then the host's **Load

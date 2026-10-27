@@ -103,7 +103,7 @@ namespace HellmartCoop
 
         // The game's subtitle font (the serif used for the player's lines); otherwise the most used font
         // among its UI texts, not counting TMP's built-in fallback.
-        private static TMP_FontAsset GameFont()
+        internal static TMP_FontAsset GameFont()
         {
             var subtitles = MonologueUI.Instance != null ? MonologueUI.Instance.GetComponentInChildren<TMP_Text>(true) : null;
             if (subtitles != null && subtitles.font != null)

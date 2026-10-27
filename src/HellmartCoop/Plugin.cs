@@ -17,7 +17,7 @@ namespace HellmartCoop
     //   HMCOOP_PORT = UDP/TCP port (overrides the config's Port)
     //   HMCOOP_BOT  = circle: move the local player around a 2 m circle (test bot)
     //   HMCOOP_MENUTEST = coop | hostplay | join: drive the menu without clicks (see CoopMenu)
-    [BepInPlugin(Guid, "Hellmart Coop", "0.9.0")]
+    [BepInPlugin(Guid, "Hellmart Coop", "0.9.1")]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "ari.hellmart.coop";
@@ -246,6 +246,7 @@ namespace HellmartCoop
             StorageSync.Register(Net);
             UpgradeSync.Register(Net);
             PlayerNames.Register(Net);
+            ChatSync.Register(Net);
         }
 
         // Joins a Steam lobby: fetch the host's save over Steam, then play over Steam P2P.
@@ -281,6 +282,7 @@ namespace HellmartCoop
             CheckoutSync.Clear();
             MonsterHunt.Clear();
             CoopDeath.Clear();
+            ChatSync.Clear();
             DoorSync.Clear();
             AnomalySync.Clear();
             CleanSync.Clear();
@@ -389,6 +391,8 @@ namespace HellmartCoop
                 StorageSync.HostUpdate(Net);
                 UpgradeSync.HostUpdate(Net);
                 PlayerNames.Update(Net);
+                ChatSync.Update(Net);
+                ChatSync.Test();
                 if (!Net.IsHost)
                     UpgradeSync.ClientTest();
                 if (!Net.IsHost)
